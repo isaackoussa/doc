@@ -4,15 +4,21 @@
 // en citations cliquables (mêmes données que pour Claude).
 import { GoogleGenAI, ApiError } from "@google/genai";
 
-// « gemini-flash-latest » suit automatiquement le dernier modèle Flash.
+// « gemini-flash-latest » suit automatiquement le dernier modèle Flash. S'il
+// n'existe pas pour la clé utilisée, on choisit tout seul le meilleur modèle
+// Flash disponible (voir pickModel).
 export const MODEL = process.env.GEMINI_MODEL || "gemini-flash-latest";
+let resolvedModel = null;
+const currentModel = () => resolvedModel || MODEL;
 export const configured = () => Boolean(process.env.GEMINI_API_KEY);
 
 let client = null;
 function getClient() {
   if (!client) {
-    const opts = { apiKey: process.env.GEMINI_API_KEY };
-    if (process.env.GEMINI_BASE_URL) opts.httpOptions = { baseUrl: process.env.GEMINI_BASE_URL };
+    // v1beta : version de l'API où sont disponibles les alias « -latest »,
+    // les instructions système et les réponses JSON structurées.
+    const opts = { apiKey: process.env.GEMINI_API_KEY, httpOptions: { apiVersion: "v1beta" } };
+    if (process.env.GEMINI_BASE_URL) opts.httpOptions.baseUrl = process.env.GEMINI_BASE_URL;
     client = new GoogleGenAI(opts);
   }
   return client;
@@ -33,7 +39,9 @@ async function withRetry(fn, delays = [4000, 12000, 30000]) {
 function friendly(e) {
   if (!(e instanceof ApiError)) return e;
   const msg =
-    e.status === 429
+    e.status === 404
+      ? `Modèle Gemini introuvable (${currentModel()}). Vérifiez GEMINI_MODEL.`
+      : e.status === 429
       ? "Limite gratuite de Gemini atteinte : patientez une minute (ou jusqu'à demain si c'est la limite du jour) puis réessayez."
       : e.status === 400 && /api key/i.test(e.message)
         ? "Clé GEMINI_API_KEY invalide."
@@ -42,7 +50,39 @@ function friendly(e) {
           : e.status >= 500
             ? "Gemini est momentanément indisponible. Réessayez."
             : `Erreur Gemini : ${e.message}`;
-  return Object.assign(new Error(msg), { status: e.status === 429 ? 429 : e.status >= 500 ? 502 : 400 });
+  return Object.assign(new Error(msg), { status: e.status === 429 ? 429 : e.status === 404 ? 404 : e.status >= 500 ? 502 : 400 });
+}
+
+/** Le meilleur modèle « Flash » texte disponible pour cette clé (le plus récent, stable de préférence). */
+async function pickModel() {
+  const found = [];
+  const pager = await getClient().models.list({ config: { pageSize: 200 } });
+  for await (const m of pager) {
+    const name = (m.name || "").replace(/^models\//, "");
+    if (!/flash/i.test(name) || /lite|image|tts|audio|live|embed|vision|exp|thinking|8b/i.test(name)) continue;
+    if (m.supportedActions && !m.supportedActions.includes("generateContent")) continue;
+    const version = parseFloat((/gemini-(\d+(?:\.\d+)?)/.exec(name) || [])[1] || "0");
+    found.push({ name, version, preview: /preview/i.test(name), latest: /latest/i.test(name) });
+  }
+  found.sort((a, b) => b.latest - a.latest || a.preview - b.preview || b.version - a.version || a.name.length - b.name.length);
+  return found[0]?.name || null;
+}
+
+/** Appelle Gemini ; si le modèle n'existe pas, en choisit un autre automatiquement (une fois). */
+async function call(fn, delays) {
+  try {
+    return await withRetry(() => fn(currentModel()), delays);
+  } catch (e) {
+    if (e.status !== 404 || resolvedModel) throw e;
+    let pick = null;
+    try {
+      pick = await pickModel();
+    } catch {}
+    if (!pick || pick === currentModel()) throw e;
+    console.warn(`Modèle Gemini ${currentModel()} introuvable, utilisation de ${pick}`);
+    resolvedModel = pick;
+    return withRetry(() => fn(currentModel()), delays);
+  }
 }
 
 function assertNotBlocked(res) {
@@ -119,12 +159,12 @@ export async function chat(docs, history, onText, system) {
     parts: i === 0 ? [{ text: `Voici les documents :\n\n${sources}` }, { text: m.content }] : [{ text: m.content }],
   }));
   let full = "";
-  await withRetry(
-    async () => {
+  await call(
+    async (model) => {
       // Une coupure en pleine réponse ne se rejoue pas (le texte est déjà affiché).
       if (full) throw Object.assign(new Error("La réponse a été interrompue. Réessayez."), { status: 502 });
       const stream = await getClient().models.generateContentStream({
-        model: MODEL,
+        model,
         contents,
         config: { systemInstruction: system + CITE_RULES },
       });
@@ -149,9 +189,9 @@ export async function generate({ docs, instruction, schema, system }) {
     config.responseMimeType = "application/json";
     config.responseJsonSchema = schema;
   }
-  const res = await withRetry(() =>
+  const res = await call((model) =>
     getClient().models.generateContent({
-      model: MODEL,
+      model,
       contents: [{ role: "user", parts: [{ text: `Voici les documents :\n\n${sources}` }, { text: instruction }] }],
       config,
     }),
@@ -161,9 +201,9 @@ export async function generate({ docs, instruction, schema, system }) {
 }
 
 export async function transcribe(mediaType, data, prompt) {
-  const res = await withRetry(() =>
+  const res = await call((model) =>
     getClient().models.generateContent({
-      model: MODEL,
+      model,
       contents: [{ role: "user", parts: [{ inlineData: { mimeType: mediaType, data } }, { text: prompt }] }],
     }),
   );
