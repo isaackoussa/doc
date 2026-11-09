@@ -284,7 +284,7 @@
       const voice = this.premiumVoiceFor(chunk.role, this.premiumVoices || {});
       const key = this.settings.engine + "|" + voice + "|" + chunk.text;
       if (!this.audioCache.has(key)) {
-        const p = fetch("/api/tts", {
+        const p = (window.lumenFetch || fetch)("/api/tts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ provider: this.settings.engine, voice, text: chunk.text }),

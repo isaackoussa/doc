@@ -73,7 +73,7 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 5px; font-si
 .chip:hover { background: var(--panel-2); }
 .check { display: inline-flex; gap: 8px; align-items: center; cursor: pointer; }
 input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; }
-select, input:not([type]), input[type="text"], textarea { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; width: 100%; }
+select, input:not([type]), input[type="text"], input[type="email"], input[type="password"], textarea { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; width: 100%; }
 select:focus, input:focus, textarea:focus { outline: 2px solid color-mix(in srgb, var(--accent) 50%, transparent); outline-offset: 0; border-color: var(--accent); }
 textarea { resize: vertical; }
 
@@ -327,3 +327,17 @@ input[type="range"] { accent-color: var(--accent); width: 100%; }
   #fontDown, #fontUp { display: none; }
   .studio-grid { grid-template-columns: 1fr; }
 }
+
+/* ---------- compte & connexion ---------- */
+.account { margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 10px 4px 2px; border-top: 1px solid var(--line); font-size: 13px; }
+.avatar { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+.account-email { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.auth { position: fixed; inset: 0; z-index: 80; background: var(--bg); display: grid; place-items: center; padding: 16px; overflow: auto; }
+.auth-card { width: min(420px, 100%); display: flex; flex-direction: column; gap: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 28px 24px; box-shadow: var(--shadow); }
+.auth-card h1 { margin: 0; font: 600 26px/1.2 var(--serif); }
+.auth-card p { margin: 0; font-size: 14px; }
+.auth-card input { font-size: 16px; }
+.hero-mark.small { width: 46px; height: 46px; font-size: 24px; border-radius: 13px; margin: 0; }
+.auth-msg { font-size: 14px; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--bad) 12%, var(--panel)); color: var(--bad); }
+.auth-msg.ok { background: color-mix(in srgb, var(--ok) 12%, var(--panel)); color: var(--ok); }
+.auth-switch { display: flex; flex-direction: column; gap: 8px; align-items: center; font-size: 14px; }

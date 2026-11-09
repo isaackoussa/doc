@@ -1,0 +1,12 @@
+[build]
+  command = "npm run build"
+  publish = "public"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+[dev]
+  # « netlify dev » : sert public/ et les fonctions sur http://localhost:8888
+  publish = "public"
+  autoLaunch = false

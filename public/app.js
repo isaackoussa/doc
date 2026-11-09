@@ -24,24 +24,79 @@
   const state = {
     config: { ai: false, tts: [], voices: {}, studio: {} },
     docs: [],
-    selected: new Set(store.get("selected", [])),
+    selected: new Set(),
     doc: null, // document ouvert dans le lecteur
-    chat: store.get("chat", []),
+    chat: [],
+    cloud: { positions: {}, overview: {}, lastDoc: null }, // historique synchronisé avec le compte
+    user: null,
     notes: [],
     playing: null, // { kind: "doc"|"note"|"podcast"|"chat", id }
     busyStudio: new Set(),
   };
 
   // ------------------------------------------------------------------ utils
+  const Identity = window.NetlifyIdentity;
+  /** fetch avec la session : si le jeton a expiré, on le rafraîchit une fois. */
+  async function authFetch(path, init = {}) {
+    let r = await fetch(path, init);
+    if (r.status === 401 && Identity && !state.config.devUser) {
+      try {
+        if (await Identity.refreshSession()) r = await fetch(path, init);
+      } catch {}
+      if (r.status === 401) showAuth("login", "Votre session a expiré, reconnectez-vous.");
+    }
+    return r;
+  }
   async function api(path, opts = {}) {
-    const r = await fetch(path, {
+    const r = await authFetch(path, {
       ...opts,
-      headers: opts.body && !(opts.body instanceof FormData) ? { "Content-Type": "application/json" } : undefined,
-      body: opts.body && !(opts.body instanceof FormData) ? JSON.stringify(opts.body) : opts.body,
+      headers: opts.body ? { "Content-Type": "application/json" } : undefined,
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
     });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || `Erreur ${r.status}`);
     return data;
+  }
+  window.lumenFetch = authFetch; // utilisé par narrator.js pour les voix premium
+
+  // Sauvegarde de l'historique dans le compte (regroupée toutes les 2 s).
+  let persistTimer = null;
+  function snapshot() {
+    return { chat: state.chat, selected: [...state.selected], ...state.cloud };
+  }
+  function persist() {
+    if (!state.user) return;
+    clearTimeout(persistTimer);
+    persistTimer = setTimeout(() => {
+      persistTimer = null;
+      api("/api/state", { method: "PUT", body: snapshot() }).catch((e) => console.warn("Sauvegarde impossible", e));
+    }, 2000);
+  }
+  addEventListener("pagehide", () => {
+    if (!persistTimer || !state.user) return;
+    clearTimeout(persistTimer);
+    fetch("/api/state", { method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify(snapshot()) });
+  });
+
+  /** Lance une tâche longue (studio, lecture d'image) et attend son résultat. */
+  async function runJob(payload, { timeoutMin = 16 } = {}) {
+    const { id } = await api("/api/jobs", { method: "POST", body: payload });
+    const kick = await authFetch("/api/jobs-run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+    if (!kick.ok && kick.status !== 202) throw new Error(`Impossible de lancer la tâche (${kick.status})`);
+    const deadline = Date.now() + timeoutMin * 60_000;
+    let wait = 1500;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, wait));
+      wait = Math.min(wait * 1.3, 5000);
+      const job = await api(`/api/jobs/${id}`);
+      if (job.status === "done") return job.result;
+      if (job.status === "error") throw new Error(job.error || "La tâche a échoué");
+    }
+    throw new Error("La tâche prend trop de temps. Réessayez plus tard.");
+  }
+  async function ocr(mediaType, data) {
+    if (!state.config.ai) throw new Error("La lecture des photos et PDF scannés demande l'IA (ANTHROPIC_API_KEY).");
+    return (await runJob({ type: "ocr", mediaType, data })).text;
   }
   function toast(msg, kind = "") {
     const t = document.createElement("div");
@@ -156,7 +211,7 @@
     onSelectionChange();
   });
   function onSelectionChange() {
-    store.set("selected", [...state.selected]);
+    persist();
     renderSources();
     renderChatIntro();
   }
@@ -173,36 +228,35 @@
   async function uploadFiles(files) {
     files = [...files];
     if (!files.length) return;
-    const fd = new FormData();
-    files.forEach((f) => fd.append("files", f));
-    const pending = toastLoading(`Lecture de ${files.length} fichier${files.length > 1 ? "s" : ""}…`);
-    try {
-      const results = await api("/api/docs", { method: "POST", body: fd });
-      pending.remove();
-      let firstOk = null;
-      for (const r of results) {
-        if (r.ok) {
-          state.selected.add(r.doc.id);
-          firstOk ||= r.doc;
-        } else toast(`${r.name} : ${r.error}`, "error");
+    const added = [];
+    for (const f of files) {
+      const pending = toastLoading(`Lecture de « ${f.name} »…`);
+      try {
+        if (f.size > 100 * 1024 * 1024) throw new Error("fichier trop lourd (max 100 Mo)");
+        const ex = await window.Extract.extractFile(f, { ocr, progress: (m) => pending.setText(`${f.name} — ${m}`) });
+        if (!ex.text.trim()) throw new Error("aucun texte trouvé");
+        if (ex.text.length > 4_000_000) throw new Error("document trop long (plus de 4 millions de caractères)");
+        added.push(await api("/api/docs", { method: "POST", body: ex }));
+      } catch (e) {
+        toast(`${f.name} : ${e.message}`, "error");
       }
-      store.set("selected", [...state.selected]);
-      await loadDocs();
-      renderChatIntro();
-      if (firstOk) {
-        toast(`Ajouté : ${results.filter((r) => r.ok).map((r) => r.doc.title).join(", ")}`, "ok");
-        openDoc(firstOk.id);
-        setView("read");
-      }
-    } catch (e) {
       pending.remove();
-      toast(e.message, "error");
     }
+    if (!added.length) return;
+    added.forEach((d) => state.selected.add(d.id));
+    persist();
+    await loadDocs();
+    renderChatIntro();
+    toast(`Ajouté : ${added.map((d) => d.title).join(", ")}`, "ok");
+    openDoc(added[0].id);
+    setView("read");
   }
   function toastLoading(msg) {
     const t = document.createElement("div");
     t.className = "toast loading";
-    t.innerHTML = `<span class="spin"></span>${esc(msg)}`;
+    t.innerHTML = `<span class="spin"></span><span></span>`;
+    t.setText = (m) => (t.lastChild.textContent = m);
+    t.setText(msg);
     $("#toasts").append(t);
     return t;
   }
@@ -246,9 +300,9 @@
     const text = $("#pasteText").value.trim();
     if (!text) return;
     try {
-      const d = await api("/api/docs/text", { method: "POST", body: { title: $("#pasteTitle").value, text } });
+      const d = await api("/api/docs", { method: "POST", body: { title: $("#pasteTitle").value, kind: "texte collé", text: window.Extract.reflow(text) } });
       state.selected.add(d.id);
-      store.set("selected", [...state.selected]);
+      persist();
       await loadDocs();
       renderChatIntro();
       openDoc(d.id);
@@ -274,7 +328,8 @@
   }
 
   async function openDoc(id, { highlight } = {}) {
-    store.set("lastDoc", id);
+    state.cloud.lastDoc = id;
+    persist();
     if (state.doc?.id !== id) {
       let doc;
       try {
@@ -319,7 +374,7 @@
     $("#readerEmpty").classList.add("hidden");
     $("#readerDoc").classList.remove("hidden");
     body.scrollTop = 0;
-    const pos = store.get("pos." + doc.id, 0);
+    const pos = (state.cloud.positions[doc.id] || 0);
     markCurrent(pos, false);
     updateReadBtn();
     if (pos > 0 && sents[pos]) sents[pos].el.scrollIntoView({ block: "center" });
@@ -335,7 +390,7 @@
     const d = state.doc;
     if (!d) return;
     if (state.playing?.kind !== "doc" || state.playing.id !== d.id) {
-      narrator.load(d.sents.map((s) => ({ text: s.text })), { title: d.title, lang: d.lang }, start ?? store.get("pos." + d.id, 0));
+      narrator.load(d.sents.map((s) => ({ text: s.text })), { title: d.title, lang: d.lang }, start ?? (state.cloud.positions[d.id] || 0));
       state.playing = { kind: "doc", id: d.id };
     } else if (start != null) {
       narrator.setIndex(start);
@@ -349,7 +404,7 @@
   function updateReadBtn() {
     const active = state.playing?.kind === "doc" && state.playing.id === state.doc?.id;
     const playing = active && (narrator.state === "playing" || narrator.state === "loading");
-    const pos = state.doc ? store.get("pos." + state.doc.id, 0) : 0;
+    const pos = state.doc ? (state.cloud.positions[state.doc.id] || 0) : 0;
     $("#readBtn span").textContent = playing ? "Pause" : active || pos > 0 ? "Reprendre" : "Écouter";
   }
 
@@ -398,7 +453,7 @@
     $("#playerSub").textContent = `${i + 1} / ${n} · ${engineLabel()}`;
     if (state.playing?.kind === "doc" && state.doc?.id === state.playing.id) {
       markCurrent(i);
-      store.set("pos." + state.playing.id, i);
+      (state.cloud.positions[state.playing.id] = i), persist();
     }
     if (state.playing?.kind === "podcast") {
       const t = narrator.items[i]?.turn;
@@ -408,7 +463,7 @@
     }
   });
   narrator.on("end", () => {
-    if (state.playing?.kind === "doc") store.set("pos." + state.playing.id, 0);
+    if (state.playing?.kind === "doc") (state.cloud.positions[state.playing.id] = 0), persist();
     $("#playerSub").textContent = "Terminé";
   });
   narrator.on("stop", () => {
@@ -549,16 +604,16 @@
       return;
     }
     const key = selKey();
-    const cache = store.get("overview", {});
+    const cache = state.cloud.overview;
     if (cache[key]) return drawOverview(cache[key]);
     box.innerHTML = `<div class="intro-card"><span class="spin"></span> Lecture des sources pour préparer une vue d'ensemble…</div>`;
     try {
-      const note = await api("/api/studio", { method: "POST", body: { kind: "overview", docIds: [...state.selected] } });
-      const c = store.get("overview", {});
+      const note = await runJob({ type: "studio", kind: "overview", docIds: [...state.selected] });
+      const c = state.cloud.overview;
       c[key] = note.content;
       const keys = Object.keys(c);
       if (keys.length > 20) delete c[keys[0]];
-      store.set("overview", c);
+      persist();
       if (selKey() === key) drawOverview(note.content);
     } catch (e) {
       if (selKey() === key) box.innerHTML = `<div class="intro-card muted">${esc(e.message)}</div>`;
@@ -665,7 +720,7 @@
     ans.innerHTML = `<span class="typing"><i></i><i></i><i></i></span>`;
     $("#chatSend").disabled = true;
     try {
-      const r = await fetch("/api/chat", {
+      const r = await authFetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -702,7 +757,8 @@
       answer.error = true;
     }
     $("#chatSend").disabled = false;
-    store.set("chat", state.chat.slice(-60));
+    state.chat = state.chat.slice(-100);
+    persist();
     el.replaceWith(messageEl(answer, state.chat.length - 1));
     scrollChat();
   }
@@ -727,7 +783,7 @@
   });
   $("#chatClear").addEventListener("click", () => {
     state.chat = [];
-    store.set("chat", []);
+    persist();
     renderChat();
   });
 
@@ -769,10 +825,7 @@
     const btns = $$(`[data-studio="${kind}"]`);
     btns.forEach((b) => (b.disabled = true));
     try {
-      const note = await api("/api/studio", {
-        method: "POST",
-        body: { kind, docIds: [...state.selected], focus: $("#studioFocus").value, length: $("#podcastLength").value },
-      });
+      const note = await runJob({ type: "studio", kind, docIds: [...state.selected], focus: $("#studioFocus").value, length: $("#podcastLength").value });
       job.remove();
       state.notes.unshift(note);
       updateNotesCount();
@@ -1003,26 +1056,134 @@
     narrator.playFrom(start);
   }
 
+  // ------------------------------------------------------------- compte
+  const authEl = $("#auth");
+  let authMode = "login";
+  function showAuth(mode = "login", msg = "") {
+    authMode = mode;
+    authEl.dataset.mode = mode;
+    authEl.classList.remove("hidden");
+    $("#authMsg").textContent = msg;
+    $("#authMsg").className = "auth-msg" + (msg ? "" : " hidden");
+    const titles = { login: "Connexion", signup: "Créer un compte", forgot: "Mot de passe oublié", reset: "Nouveau mot de passe" };
+    $("#authTitle").textContent = titles[mode];
+    $("#authSubmit").textContent = { login: "Se connecter", signup: "Créer mon compte", forgot: "Recevoir un lien", reset: "Enregistrer" }[mode];
+    $("#authEmailRow").classList.toggle("hidden", mode === "reset");
+    $("#authPassRow").classList.toggle("hidden", mode === "forgot");
+    $("#authPass").autocomplete = mode === "login" ? "current-password" : "new-password";
+    $$(".auth-switch [data-mode]").forEach((b) => b.classList.toggle("hidden", b.dataset.mode === mode || (mode === "reset" && b.dataset.mode !== "login")));
+    setTimeout(() => (mode === "reset" ? $("#authPass") : $("#authEmail")).focus(), 50);
+  }
+  function hideAuth() {
+    authEl.classList.add("hidden");
+  }
+  $$(".auth-switch [data-mode]").forEach((b) => b.addEventListener("click", () => showAuth(b.dataset.mode)));
+  function authErrorText(e) {
+    const m = String(e?.message || e);
+    if (/invalid_grant|invalid login|no user found|password/i.test(m) && authMode === "login") return "E-mail ou mot de passe incorrect.";
+    if (/not confirmed/i.test(m)) return "Confirmez d'abord votre adresse e-mail (lien reçu par mail).";
+    if (/already registered|already exists/i.test(m)) return "Un compte existe déjà avec cet e-mail. Connectez-vous.";
+    if (/at least|too short|weak/i.test(m)) return "Mot de passe trop court (6 caractères minimum).";
+    if (/identity.*(not|disabled|enabled)|404|MissingIdentity/i.test(m) || e?.name === "MissingIdentityError")
+      return "La connexion n'est pas encore activée sur ce site : activez Netlify Identity dans le tableau de bord Netlify.";
+    return m;
+  }
+  $("#authForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const email = $("#authEmail").value.trim();
+    const pass = $("#authPass").value;
+    const btn = $("#authSubmit");
+    btn.disabled = true;
+    const say = (msg, ok) => {
+      $("#authMsg").textContent = msg;
+      $("#authMsg").className = "auth-msg" + (ok ? " ok" : "");
+    };
+    try {
+      if (authMode === "login") {
+        await Identity.login(email, pass);
+        location.reload();
+      } else if (authMode === "signup") {
+        const u = await Identity.signup(email, pass);
+        if (u?.confirmedAt) location.reload();
+        else say(`Presque fini ! Un e-mail de confirmation a été envoyé à ${email}. Cliquez sur le lien, puis revenez vous connecter.`, true);
+      } else if (authMode === "forgot") {
+        await Identity.requestPasswordRecovery(email);
+        say(`Si un compte existe pour ${email}, un lien pour changer le mot de passe vient d'être envoyé.`, true);
+      } else if (authMode === "reset") {
+        await Identity.updateUser({ password: pass });
+        location.reload();
+      }
+    } catch (err) {
+      say(authErrorText(err));
+    }
+    btn.disabled = false;
+  });
+  $("#logoutBtn").addEventListener("click", async () => {
+    if (persistTimer) {
+      clearTimeout(persistTimer);
+      await api("/api/state", { method: "PUT", body: snapshot() }).catch(() => {});
+    }
+    narrator.stop();
+    try {
+      await Identity.logout();
+    } catch {}
+    location.reload();
+  });
+
   // ------------------------------------------------------------- démarrage
   (async () => {
     try {
-      state.config = await api("/api/config");
+      state.config = await (await fetch("/api/config")).json();
     } catch (e) {
       toast("Serveur injoignable : " + e.message, "error");
     }
-    narrator.premiumVoices = state.config.voices;
-    if (narrator.settings.engine !== "browser" && !state.config.tts.includes(narrator.settings.engine)) narrator.set({ engine: "browser" });
+    narrator.premiumVoices = state.config.voices || {};
+    if (narrator.settings.engine !== "browser" && !(state.config.tts || []).includes(narrator.settings.engine)) narrator.set({ engine: "browser" });
     // Première visite : si une voix premium est disponible, on la propose par défaut.
-    if (!store.get("voiceChosen", false) && state.config.tts.length) {
+    if (!store.get("voiceChosen", false) && state.config.tts?.length) {
       narrator.set({ engine: state.config.tts[0] });
       store.set("voiceChosen", true);
     }
-    $("#aiOff").classList.toggle("hidden", state.config.ai);
+    $("#aiOff").classList.toggle("hidden", !!state.config.ai);
+
+    // Liens reçus par e-mail (confirmation, mot de passe oublié…).
+    let user = null;
+    if (state.config.devUser) user = { email: state.config.devUser };
+    else if (Identity) {
+      try {
+        const cb = await Identity.handleAuthCallback();
+        if (cb) history.replaceState(null, "", location.pathname);
+        if (cb?.type === "recovery") return showAuth("reset", "Choisissez un nouveau mot de passe.");
+        if (cb?.type === "confirmation") toast("Adresse e-mail confirmée, bienvenue !", "ok");
+      } catch (e) {
+        toast("Lien invalide ou expiré : " + authErrorText(e), "error");
+      }
+      user = await Identity.getUser();
+    }
+    if (!user) return showAuth("login");
+
+    let saved;
+    try {
+      saved = await api("/api/state");
+    } catch (e) {
+      if (!authEl.classList.contains("hidden")) return;
+      toast(e.message, "error");
+      saved = {};
+    }
+    state.user = { email: saved.email || user.email };
+    $("#userEmail").textContent = state.user.email || "";
+    $("#account").classList.remove("hidden");
+    state.chat = saved.chat || [];
+    state.selected = new Set(saved.selected || []);
+    state.cloud = { positions: saved.positions || {}, overview: saved.overview || {}, lastDoc: saved.lastDoc || null };
+    hideAuth();
+    if (Identity && !state.config.devUser) setInterval(() => Identity.refreshSession().catch(() => {}), 20 * 60_000);
+
     await loadDocs();
     renderChat();
     renderChatIntro();
     loadNotes();
-    const last = store.get("lastDoc");
+    const last = state.cloud.lastDoc;
     if (last && state.docs.some((d) => d.id === last)) openDoc(last);
     setView("read");
   })();

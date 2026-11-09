@@ -36,6 +36,11 @@
       </div>
       <ul class="source-list" id="sourceList"></ul>
       <div class="empty-sources muted" id="emptySources">Aucune source pour l'instant.</div>
+      <div class="account hidden" id="account">
+        <span class="avatar" aria-hidden="true">@</span>
+        <span class="account-email" id="userEmail"></span>
+        <button class="link" id="logoutBtn">Se déconnecter</button>
+      </div>
     </aside>
 
     <!-- ============ LECTEUR ============ -->
@@ -247,11 +252,31 @@
     </form>
   </dialog>
 
+  <!-- ============ CONNEXION ============ -->
+  <div class="auth hidden" id="auth" data-mode="login">
+    <form class="auth-card" id="authForm">
+      <div class="hero-mark small">L</div>
+      <h1 id="authTitle">Connexion</h1>
+      <p class="muted">Connectez-vous avec votre e-mail pour retrouver vos documents, vos notes et l'historique de vos discussions sur tous vos appareils.</p>
+      <label class="field" id="authEmailRow"><span>E-mail</span><input type="email" id="authEmail" autocomplete="email" placeholder="vous@exemple.com" required /></label>
+      <label class="field" id="authPassRow"><span>Mot de passe</span><input type="password" id="authPass" autocomplete="current-password" minlength="6" placeholder="6 caractères minimum" /></label>
+      <div class="auth-msg hidden" id="authMsg" role="status"></div>
+      <button class="btn primary big" id="authSubmit" type="submit">Se connecter</button>
+      <div class="auth-switch">
+        <button type="button" class="link" data-mode="signup">Pas encore de compte ? Créer un compte</button>
+        <button type="button" class="link hidden" data-mode="login">Déjà un compte ? Se connecter</button>
+        <button type="button" class="link" data-mode="forgot">Mot de passe oublié ?</button>
+      </div>
+    </form>
+  </div>
+
   <div class="drop-overlay hidden" id="dropOverlay"><div>Déposez vos documents</div></div>
   <div class="toasts" id="toasts"></div>
 
+  <script src="/vendor/identity.js"></script>
   <script src="/vendor/marked.js"></script>
   <script src="/vendor/purify.js"></script>
+  <script src="extract.js"></script>
   <script src="narrator.js"></script>
   <script src="app.js"></script>
 </body>
