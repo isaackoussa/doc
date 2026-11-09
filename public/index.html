@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Lumen — lire et comprendre</title>
+  <meta name="theme-color" content="#f6f3ee" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#16181d" media="(prefers-color-scheme: dark)" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23c2410c'/><path d='M9 22V10h3v9.5h7V22z' fill='white'/></svg>" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app" data-view="read">
+    <!-- ============ SOURCES ============ -->
+    <aside class="panel sources" id="sourcesPanel">
+      <header class="panel-head">
+        <div class="brand"><span class="logo">L</span> Lumen</div>
+        <button class="icon-btn" id="settingsBtn" title="Réglages de la voix et de la lecture" aria-label="Réglages">
+          <svg viewBox="0 0 24 24"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+        </button>
+      </header>
+
+      <div class="add-row">
+        <label class="btn primary grow">
+          <input type="file" id="fileInput" multiple hidden
+            accept=".pdf,.docx,.txt,.md,.markdown,.html,.htm,.csv,.json,.png,.jpg,.jpeg,.webp,.gif,application/pdf,image/*,text/*" />
+          <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Ajouter
+        </label>
+        <button class="btn" id="pasteBtn" title="Coller du texte">Coller</button>
+      </div>
+      <p class="hint">PDF, Word, texte, pages web ou photos de documents. Glissez-déposez ici.</p>
+
+      <div class="sources-tools">
+        <label class="check"><input type="checkbox" id="selectAll" /> <span>Tout sélectionner</span></label>
+        <span class="muted" id="selCount"></span>
+      </div>
+      <ul class="source-list" id="sourceList"></ul>
+      <div class="empty-sources muted" id="emptySources">Aucune source pour l'instant.</div>
+    </aside>
+
+    <!-- ============ LECTEUR ============ -->
+    <main class="panel reader" id="readerPanel">
+      <div class="reader-empty" id="readerEmpty">
+        <div class="hero">
+          <div class="hero-mark">L</div>
+          <h1>Envoyez un document,<br />Lumen vous le lit.</h1>
+          <p>Ajoutez un PDF, un fichier Word, une photo de page ou du texte. Écoutez-le avec une voix naturelle, puis posez vos questions, générez un résumé, un quiz, des fiches ou un podcast pour mieux comprendre.</p>
+          <label class="btn primary big">
+            <input type="file" id="fileInput2" multiple hidden
+              accept=".pdf,.docx,.txt,.md,.markdown,.html,.htm,.csv,.json,.png,.jpg,.jpeg,.webp,.gif,application/pdf,image/*,text/*" />
+            Choisir des fichiers
+          </label>
+        </div>
+      </div>
+
+      <div class="reader-doc hidden" id="readerDoc">
+        <header class="reader-head">
+          <div class="reader-title">
+            <h2 id="docTitle"></h2>
+            <div class="muted small" id="docMeta"></div>
+          </div>
+          <div class="reader-actions">
+            <button class="icon-btn" id="fontDown" title="Texte plus petit" aria-label="Texte plus petit">A−</button>
+            <button class="icon-btn" id="fontUp" title="Texte plus grand" aria-label="Texte plus grand">A+</button>
+            <button class="btn primary" id="readBtn">
+              <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" class="fill"/></svg> <span>Écouter</span>
+            </button>
+          </div>
+        </header>
+        <div class="progress-line"><div id="docProgress"></div></div>
+        <article class="doc-body" id="docBody" tabindex="0"></article>
+      </div>
+    </main>
+
+    <!-- ============ COMPRENDRE ============ -->
+    <aside class="panel assist" id="assistPanel">
+      <nav class="tabs" role="tablist">
+        <button class="tab active" data-tab="chat" role="tab">Discussion</button>
+        <button class="tab" data-tab="studio" role="tab">Studio</button>
+        <button class="tab" data-tab="notes" role="tab">Notes <span class="badge" id="notesCount"></span></button>
+      </nav>
+
+      <div class="ai-off hidden" id="aiOff">
+        <strong>IA non configurée.</strong> La lecture à voix haute fonctionne, mais pour la discussion et le studio, ajoutez <code>ANTHROPIC_API_KEY</code> dans le fichier <code>.env</code> puis relancez le serveur.
+      </div>
+
+      <!-- Discussion -->
+      <section class="tab-page" data-page="chat">
+        <div class="chat-scroll" id="chatScroll">
+          <div class="chat-intro" id="chatIntro"></div>
+          <div id="chatMessages"></div>
+        </div>
+        <form class="chat-form" id="chatForm">
+          <textarea id="chatInput" rows="1" placeholder="Posez une question sur vos sources…"></textarea>
+          <button class="icon-btn send" type="submit" aria-label="Envoyer" id="chatSend">
+            <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+        </form>
+        <div class="chat-foot muted small"><span id="chatScope"></span> <button class="link" id="chatClear">Nouvelle discussion</button></div>
+      </section>
+
+      <!-- Studio -->
+      <section class="tab-page hidden" data-page="studio">
+        <div class="studio-scroll">
+          <p class="muted small" id="studioScope"></p>
+          <div class="podcast-card">
+            <div>
+              <h3>Podcast audio</h3>
+              <p class="small">Deux voix discutent de vos documents pour vous les expliquer.</p>
+            </div>
+            <div class="row">
+              <select id="podcastLength" aria-label="Durée">
+                <option value="court">Court · 3 min</option>
+                <option value="moyen" selected>Moyen · 6 min</option>
+                <option value="long">Long · 10 min</option>
+              </select>
+              <button class="btn primary" data-studio="podcast">Générer</button>
+            </div>
+          </div>
+          <div class="studio-grid">
+            <button class="tool" data-studio="summary"><b>Résumé</b><span>L'essentiel, structuré</span></button>
+            <button class="tool" data-studio="keypoints"><b>Points clés</b><span>Les idées à retenir</span></button>
+            <button class="tool" data-studio="explain"><b>Explique simplement</b><span>Comme à un débutant</span></button>
+            <button class="tool" data-studio="studyguide"><b>Guide d'étude</b><span>Notions, pièges, questions</span></button>
+            <button class="tool" data-studio="quiz"><b>Quiz</b><span>10 questions interactives</span></button>
+            <button class="tool" data-studio="flashcards"><b>Fiches</b><span>Recto / verso</span></button>
+            <button class="tool" data-studio="mindmap"><b>Carte mentale</b><span>Vue d'ensemble visuelle</span></button>
+            <button class="tool" data-studio="faq"><b>FAQ</b><span>Questions fréquentes</span></button>
+            <button class="tool" data-studio="glossary"><b>Glossaire</b><span>Les termes expliqués</span></button>
+            <button class="tool" data-studio="timeline"><b>Chronologie</b><span>Étapes et dates</span></button>
+          </div>
+          <details class="focus-box">
+            <summary>Personnaliser (facultatif)</summary>
+            <textarea id="studioFocus" rows="2" placeholder="Ex. : insister sur le chapitre 3, niveau lycée, préparer un examen…"></textarea>
+          </details>
+          <div id="studioStatus"></div>
+        </div>
+      </section>
+
+      <!-- Notes -->
+      <section class="tab-page hidden" data-page="notes">
+        <div class="notes-scroll">
+          <ul class="note-list" id="noteList"></ul>
+          <div class="muted small empty-notes" id="emptyNotes">Les résultats du studio et les réponses enregistrées apparaîtront ici.</div>
+        </div>
+      </section>
+
+      <!-- Visionneuse de note -->
+      <section class="note-view hidden" id="noteView">
+        <header class="note-view-head">
+          <button class="icon-btn" id="noteBack" aria-label="Retour">
+            <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>
+          </button>
+          <h3 id="noteTitle"></h3>
+          <button class="icon-btn" id="noteListen" title="Écouter" aria-label="Écouter">
+            <svg viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+          </button>
+          <button class="icon-btn" id="noteDelete" title="Supprimer" aria-label="Supprimer">
+            <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
+          </button>
+        </header>
+        <div class="note-body" id="noteBody"></div>
+      </section>
+    </aside>
+
+    <!-- ============ LECTEUR AUDIO ============ -->
+    <div class="player hidden" id="player">
+      <div class="player-info">
+        <div class="player-title" id="playerTitle"></div>
+        <div class="player-sub muted small" id="playerSub"></div>
+      </div>
+      <div class="player-controls">
+        <button class="icon-btn" id="pPrev" aria-label="Phrase précédente" title="Phrase précédente">
+          <svg viewBox="0 0 24 24"><path d="M6 5v14M18 6l-9 6 9 6z" class="fill"/></svg>
+        </button>
+        <button class="play-btn" id="pPlay" aria-label="Lecture / pause">
+          <svg viewBox="0 0 24 24" class="i-play"><path d="M8 5v14l11-7z" class="fill"/></svg>
+          <svg viewBox="0 0 24 24" class="i-pause"><path d="M7 5h4v14H7zM13 5h4v14h-4z" class="fill"/></svg>
+          <span class="spinner"></span>
+        </button>
+        <button class="icon-btn" id="pNext" aria-label="Phrase suivante" title="Phrase suivante">
+          <svg viewBox="0 0 24 24"><path d="M18 5v14M6 6l9 6-9 6z" class="fill"/></svg>
+        </button>
+      </div>
+      <div class="player-extra">
+        <button class="chip" id="pRate" title="Vitesse">1×</button>
+        <button class="chip" id="pVoice" title="Changer de voix">Voix</button>
+        <button class="icon-btn" id="pStop" aria-label="Arrêter" title="Arrêter">
+          <svg viewBox="0 0 24 24"><path d="M6 6h12v12H6z" class="fill"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- ============ NAVIGATION MOBILE ============ -->
+    <nav class="mobile-nav">
+      <button data-view="sources">
+        <svg viewBox="0 0 24 24"><path d="M4 5h6l2 2h8v12H4z"/></svg> Sources
+      </button>
+      <button data-view="read">
+        <svg viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2zM8 7h7M8 11h7"/></svg> Lecture
+      </button>
+      <button data-view="assist">
+        <svg viewBox="0 0 24 24"><path d="M12 3l1.8 4.7L18.5 9l-4.7 1.8L12 15.5l-1.8-4.7L5.5 9l4.7-1.3zM18 15l.9 2.1L21 18l-2.1.9L18 21l-.9-2.1L15 18l2.1-.9z"/></svg> Comprendre
+      </button>
+    </nav>
+  </div>
+
+  <!-- ============ RÉGLAGES ============ -->
+  <dialog id="settingsDlg" class="dlg">
+    <form method="dialog">
+      <header><h3>Voix &amp; lecture</h3><button class="icon-btn" value="close" aria-label="Fermer">✕</button></header>
+      <label class="field">
+        <span>Moteur de voix</span>
+        <select id="engineSel"></select>
+        <small class="muted" id="engineHint"></small>
+      </label>
+      <label class="field">
+        <span>Voix de lecture</span>
+        <select id="voiceSel"></select>
+        <small class="muted" id="voiceHint"></small>
+      </label>
+      <div class="field">
+        <span>Vitesse : <b id="rateVal">1×</b></span>
+        <input type="range" id="rateRange" min="0.6" max="2.5" step="0.05" value="1" />
+      </div>
+      <div class="field two">
+        <label><span>Voix podcast — Léa</span><select id="voiceA"></select></label>
+        <label><span>Voix podcast — Hugo</span><select id="voiceB"></select></label>
+      </div>
+      <label class="check"><input type="checkbox" id="followChk" checked /> <span>Faire défiler le texte pendant la lecture</span></label>
+      <footer>
+        <button type="button" class="btn" id="testVoice">Tester la voix</button>
+        <button class="btn primary" value="close">Terminé</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="pasteDlg" class="dlg">
+    <form method="dialog" id="pasteForm">
+      <header><h3>Coller du texte</h3><button class="icon-btn" value="close" aria-label="Fermer">✕</button></header>
+      <label class="field"><span>Titre</span><input id="pasteTitle" placeholder="Ex. : Cours de biologie, chapitre 2" /></label>
+      <label class="field"><span>Texte</span><textarea id="pasteText" rows="10" placeholder="Collez votre texte ici…"></textarea></label>
+      <footer>
+        <button class="btn" value="close">Annuler</button>
+        <button class="btn primary" value="ok" id="pasteOk">Ajouter</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <div class="drop-overlay hidden" id="dropOverlay"><div>Déposez vos documents</div></div>
+  <div class="toasts" id="toasts"></div>
+
+  <script src="/vendor/marked.js"></script>
+  <script src="/vendor/purify.js"></script>
+  <script src="narrator.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
