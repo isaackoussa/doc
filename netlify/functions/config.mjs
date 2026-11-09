@@ -1,12 +1,13 @@
 // Configuration publique : IA et voix disponibles, outils du studio.
-import { aiEnabled, MODEL, STUDIO } from "../lib/ai.mjs";
+import { aiEnabled, provider, modelName, STUDIO } from "../lib/ai.mjs";
 import { listVoices, ttsProviders } from "../lib/tts.mjs";
 import { handle, json, devUser } from "../lib/http.mjs";
 
 export default handle(async () =>
   json({
     ai: aiEnabled(),
-    model: MODEL,
+    provider: provider(),
+    model: modelName(),
     tts: ttsProviders(),
     voices: await listVoices(),
     devUser: devUser()?.email || null,

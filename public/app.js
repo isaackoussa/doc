@@ -95,7 +95,7 @@
     throw new Error("La tâche prend trop de temps. Réessayez plus tard.");
   }
   async function ocr(mediaType, data) {
-    if (!state.config.ai) throw new Error("La lecture des photos et PDF scannés demande l'IA (ANTHROPIC_API_KEY).");
+    if (!state.config.ai) throw new Error("La lecture des photos et PDF scannés demande l'IA : ajoutez GEMINI_API_KEY (gratuit).");
     return (await runJob({ type: "ocr", mediaType, data })).text;
   }
   function toast(msg, kind = "") {
@@ -473,6 +473,18 @@
     updateReadBtn();
   });
   narrator.on("error", (msg) => toast(msg, "error"));
+  // Téléchargement d'une voix Piper (une seule fois par voix).
+  const dlToasts = {};
+  narrator.on("download", ({ voice, url, loaded, total }) => {
+    if (!url || !/\.onnx$/.test(url) || !total) return;
+    const name = (window.PiperInfo.voices.find((v) => v.id === voice)?.name || voice).split(" — ")[0];
+    const t = (dlToasts[voice] ||= toastLoading(""));
+    t.setText(`Téléchargement de la voix ${name}… ${Math.round((loaded / total) * 100)} % (une seule fois)`);
+    if (loaded >= total) {
+      t.remove();
+      delete dlToasts[voice];
+    }
+  });
 
   $("#pPlay").addEventListener("click", () => narrator.toggle());
   $("#pPrev").addEventListener("click", () => narrator.prev());
@@ -498,7 +510,7 @@
   });
 
   function engineLabel() {
-    return { browser: "voix du navigateur", openai: "voix premium OpenAI", elevenlabs: "voix premium ElevenLabs" }[narrator.settings.engine];
+    return { piper: "voix naturelle Piper", browser: "voix du navigateur", openai: "voix premium OpenAI", elevenlabs: "voix premium ElevenLabs" }[narrator.settings.engine];
   }
 
   // ---------------------------------------------------------------- réglages
@@ -509,15 +521,17 @@
   $("#settingsBtn").addEventListener("click", openSettings);
   function fillSettings() {
     const s = narrator.settings;
-    const engines = [["browser", "Voix du navigateur (gratuit, hors-ligne)"]];
+    const engines = [];
+    if (window.PiperInfo.supported) engines.push(["piper", "Voix naturelles gratuites (Piper, sur l'appareil)"]);
+    engines.push(["browser", "Voix du navigateur (gratuit, instantané)"]);
     if (state.config.tts.includes("elevenlabs")) engines.push(["elevenlabs", "ElevenLabs — voix premium très naturelles"]);
     if (state.config.tts.includes("openai")) engines.push(["openai", "OpenAI — voix premium naturelles"]);
-    if (!engines.some(([k]) => k === s.engine)) s.engine = "browser";
+    if (!engines.some(([k]) => k === s.engine)) s.engine = engines[0][0];
     $("#engineSel").innerHTML = engines.map(([k, l]) => `<option value="${k}" ${k === s.engine ? "selected" : ""}>${l}</option>`).join("");
-    $("#engineHint").textContent =
-      engines.length > 1
-        ? ""
-        : "Pour des voix encore plus naturelles, ajoutez ELEVENLABS_API_KEY ou OPENAI_API_KEY dans .env. Astuce : dans Microsoft Edge, les voix « Natural » sont excellentes et gratuites.";
+    $("#engineHint").textContent = {
+      piper: "Gratuit et sans compte : la voix est calculée sur votre appareil. Elle est téléchargée une seule fois (30 à 75 Mo).",
+      browser: "Astuce : dans Microsoft Edge, les voix « Natural » sont excellentes ; sur iPhone/Mac, choisissez une voix « Améliorée ».",
+    }[s.engine] || "";
 
     const lang = state.doc?.lang || narrator.lang || "fr";
     if (s.engine === "browser") {
@@ -532,6 +546,7 @@
       const best = narrator.browserVoiceFor();
       $("#voiceHint").textContent = best ? `Voix automatique : ${best.name}` : "Aucune voix trouvée sur cet appareil.";
     } else {
+      narrator.lang = lang;
       const list = state.config.voices[s.engine] || [];
       const pv = s.premiumVoice[s.engine] || {};
       const opts = (sel) => list.map((v) => `<option value="${esc(v.id)}" ${v.id === sel ? "selected" : ""}>${esc(v.name)}</option>`).join("");
@@ -539,7 +554,8 @@
       $("#voiceSel").innerHTML = opts(pv.main || narrator.premiumVoiceFor(null, state.config.voices));
       $("#voiceA").innerHTML = opts(narrator.premiumVoiceFor("A", state.config.voices));
       $("#voiceB").innerHTML = opts(narrator.premiumVoiceFor("B", state.config.voices));
-      $("#voiceHint").textContent = "Voix générée par le serveur, multilingue.";
+      $("#voiceHint").textContent =
+        s.engine === "piper" ? "Si le texte est dans une autre langue, la voix de cette langue est choisie automatiquement." : "Voix générée par le serveur, multilingue.";
     }
     $("#rateRange").value = s.rate;
     $("#rateVal").textContent = fmtRate(s.rate);
@@ -574,6 +590,7 @@
   });
   narrator.on("settings", () => {
     $("#pRate").textContent = fmtRate(narrator.settings.rate);
+    if (narrator.items.length) $("#playerSub").textContent = `${narrator.index + 1} / ${narrator.items.length} · ${engineLabel()}`;
   });
   narrator.on("voices", () => {
     if ($("#settingsDlg").open) fillSettings();
@@ -699,6 +716,8 @@
     const html = md(text).replace(/⟦(\d+)⟧/g, (_, n) => `<button class="cite" data-c="${n}">${n}</button>`);
     return { html, cites };
   }
+  // Références [D1-P3] écrites par Gemini : masquées pendant l'écriture, puis remplacées par des puces.
+  const CITE_MARK = /\s*\[\s*D\d+-P\d+(?:\s*[,;]\s*D\d+-P\d+)*\s*\]|\s*\[\s*D\d+(?:-P?\d*)?$/g;
   function scrollChat() {
     const s = $("#chatScroll");
     s.scrollTop = s.scrollHeight;
@@ -707,7 +726,7 @@
   async function ask(question) {
     question = question.trim();
     if (!question) return;
-    if (!state.config.ai) return toast("Configurez ANTHROPIC_API_KEY pour activer la discussion.", "error");
+    if (!state.config.ai) return toast("Ajoutez GEMINI_API_KEY (gratuit) pour activer la discussion.", "error");
     if (!state.selected.size) return toast("Cochez au moins une source.", "error");
     showTab("chat");
     setView("assist");
@@ -744,7 +763,7 @@
           const ev = JSON.parse(line);
           if (ev.type === "text") {
             answer.content += ev.text;
-            ans.innerHTML = md(answer.content);
+            ans.innerHTML = md(answer.content.replace(CITE_MARK, ""));
             scrollChat();
           } else if (ev.type === "done") {
             answer.blocks = ev.blocks;
@@ -815,7 +834,7 @@
   // ---------------------------------------------------------------- studio
   $$("[data-studio]").forEach((b) => b.addEventListener("click", () => runStudio(b.dataset.studio)));
   async function runStudio(kind) {
-    if (!state.config.ai) return toast("Configurez ANTHROPIC_API_KEY pour activer le studio.", "error");
+    if (!state.config.ai) return toast("Ajoutez GEMINI_API_KEY (gratuit) pour activer le studio.", "error");
     if (!state.selected.size) return toast("Cochez au moins une source.", "error");
     const label = state.config.studio[kind]?.label || kind;
     const job = document.createElement("div");
@@ -1017,7 +1036,7 @@
         <div><h4>${esc(p.title)}</h4><p class="muted small">Avec Léa et Hugo · ${p.turns.length} répliques</p></div>
       </div>
       <div class="row"><button class="btn primary" data-a="play">▶ Écouter le podcast</button>
-      ${premium ? `<button class="btn" data-a="mp3">Télécharger MP3</button>` : `<span class="muted small">Astuce : avec une voix premium, vous pourrez télécharger le MP3.</span>`}</div>
+      ${premium ? `<button class="btn" data-a="mp3">Télécharger l'audio</button>` : `<span class="muted small">Astuce : avec les voix naturelles Piper, vous pourrez télécharger l'audio.</span>`}</div>
       <div class="transcript">${p.turns
         .map((t, ti) => `<div class="turn ${t.speaker === "A" ? "a" : "b"}" data-t="${ti}"><span class="who">${t.speaker === "A" ? "Léa" : "Hugo"}</span><p>${esc(t.text)}</p></div>`)
         .join("")}</div></div>`;
@@ -1035,16 +1054,16 @@
             state.playing = { kind: "podcast", id: currentNote.id };
           }
           narrator.premiumVoices = state.config.voices;
-          const blob = await narrator.exportMp3((f) => (btn.textContent = `Préparation… ${Math.round(f * 100)} %`));
+          const { blob, ext } = await narrator.exportAudio((f) => (btn.textContent = `Préparation… ${Math.round(f * 100)} %`));
           const a = document.createElement("a");
           a.href = URL.createObjectURL(blob);
-          a.download = (p.title || "podcast").replace(/[\\/:*?"<>|]+/g, "") + ".mp3";
+          a.download = (p.title || "podcast").replace(/[\\/:*?"<>|]+/g, "") + "." + ext;
           a.click();
         } catch (err) {
           toast(err.message, "error");
         }
         btn.disabled = false;
-        btn.textContent = "Télécharger MP3";
+        btn.textContent = "Télécharger l'audio";
       }
     });
   }
@@ -1138,7 +1157,9 @@
       toast("Serveur injoignable : " + e.message, "error");
     }
     narrator.premiumVoices = state.config.voices || {};
-    if (narrator.settings.engine !== "browser" && !(state.config.tts || []).includes(narrator.settings.engine)) narrator.set({ engine: "browser" });
+    state.config.voices = { ...(state.config.voices || {}), piper: window.PiperInfo.voices };
+    const engineOk = (e) => e === "browser" || (e === "piper" && window.PiperInfo.supported) || (state.config.tts || []).includes(e);
+    if (!engineOk(narrator.settings.engine)) narrator.set({ engine: window.PiperInfo.supported ? "piper" : "browser" });
     // Première visite : si une voix premium est disponible, on la propose par défaut.
     if (!store.get("voiceChosen", false) && state.config.tts?.length) {
       narrator.set({ engine: state.config.tts[0] });

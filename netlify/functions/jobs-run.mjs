@@ -1,6 +1,6 @@
 // Fonction d'arrière-plan (jusqu'à 15 min) : exécute une tâche créée par /api/jobs.
 import { randomUUID } from "node:crypto";
-import { studio, transcribeWithClaude, STUDIO } from "../lib/ai.mjs";
+import { studio, transcribe, STUDIO } from "../lib/ai.mjs";
 import { humanError, isId } from "../lib/http.mjs";
 import { jobsStore, loadDocs, saveNote } from "../lib/storage.mjs";
 
@@ -35,11 +35,7 @@ export default async (req) => {
       job.result = note;
     } else if (job.type === "ocr") {
       const input = await store.get(`input/${id}`, { type: "json" });
-      const block =
-        input.mediaType === "application/pdf"
-          ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: input.data } }
-          : { type: "image", source: { type: "base64", media_type: input.mediaType, data: input.data } };
-      job.result = { text: await transcribeWithClaude(block) };
+      job.result = { text: await transcribe(input) };
       await store.delete(`input/${id}`);
     }
     job.status = "done";

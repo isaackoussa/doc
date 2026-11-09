@@ -93,11 +93,60 @@
     return final;
   }
 
+  // ---------- voix Piper (gratuites, calculées dans le navigateur) ----------
+  const PIPER_VOICES = [
+    { id: "fr_FR-siwis-medium", name: "Siwis — française, femme (recommandée)", lang: "fr", size: 63 },
+    { id: "fr_FR-tom-medium", name: "Tom — français, homme", lang: "fr", size: 63 },
+    { id: "fr_FR-upmc-medium", name: "UPMC — française, femme", lang: "fr", size: 76 },
+    { id: "fr_FR-mls-medium", name: "MLS — français, homme", lang: "fr", size: 77 },
+    { id: "fr_FR-gilles-low", name: "Gilles — français, homme (léger)", lang: "fr", size: 28 },
+    { id: "fr_FR-siwis-low", name: "Siwis — française, femme (léger)", lang: "fr", size: 28 },
+    { id: "en_US-hfc_female-medium", name: "HFC — English (US), female", lang: "en", size: 63 },
+    { id: "en_US-hfc_male-medium", name: "HFC — English (US), male", lang: "en", size: 63 },
+    { id: "en_US-lessac-medium", name: "Lessac — English (US), female", lang: "en", size: 63 },
+    { id: "en_GB-alba-medium", name: "Alba — English (UK), female", lang: "en", size: 63 },
+    { id: "en_US-ryan-medium", name: "Ryan — English (US), male", lang: "en", size: 63 },
+    { id: "es_ES-sharvard-medium", name: "Sharvard — español", lang: "es", size: 77 },
+    { id: "es_ES-davefx-medium", name: "Davefx — español, hombre", lang: "es", size: 63 },
+    { id: "de_DE-kerstin-low", name: "Kerstin — Deutsch, Frau", lang: "de", size: 28 },
+    { id: "de_DE-thorsten-medium", name: "Thorsten — Deutsch, Mann", lang: "de", size: 63 },
+    { id: "it_IT-riccardo-x_low", name: "Riccardo — italiano", lang: "it", size: 28 },
+  ];
+  const PIPER_DEFAULTS = {
+    fr: ["fr_FR-siwis-medium", "fr_FR-tom-medium"],
+    en: ["en_US-hfc_female-medium", "en_US-hfc_male-medium"],
+    es: ["es_ES-sharvard-medium", "es_ES-davefx-medium"],
+    de: ["de_DE-kerstin-low", "de_DE-thorsten-medium"],
+    it: ["it_IT-riccardo-x_low", "it_IT-riccardo-x_low"],
+  };
+  let piperModule = null;
+  const piper = () => (piperModule ||= import("/vendor/piper.js"));
+  const piperSupported = typeof WebAssembly === "object" && !!navigator.storage?.getDirectory;
+
+  /** Assemble plusieurs fichiers WAV (même format) en un seul. */
+  async function concatWav(blobs) {
+    const bufs = await Promise.all(blobs.map((b) => b.arrayBuffer()));
+    const rate = new DataView(bufs[0]).getUint32(24, true);
+    const pcm = bufs.map((b) => {
+      if (new DataView(b).getUint32(24, true) !== rate) throw new Error("Les deux voix n'ont pas la même qualité audio : choisissez deux voix « medium ».");
+      return new Uint8Array(b, 44);
+    });
+    const len = pcm.reduce((s, p) => s + p.length, 0);
+    const out = new Uint8Array(44 + len);
+    out.set(new Uint8Array(bufs[0], 0, 44));
+    const v = new DataView(out.buffer);
+    v.setUint32(4, 36 + len, true);
+    v.setUint32(40, len, true);
+    let o = 44;
+    for (const p of pcm) out.set(p, (o += p.length) - p.length);
+    return new Blob([out], { type: "audio/wav" });
+  }
+
   // ---------- Narrator ----------
   class Narrator {
     constructor() {
       this.settings = Object.assign(
-        { engine: "browser", voice: "auto", voiceA: "auto", voiceB: "auto", rate: 1, premiumVoice: {} },
+        { engine: piperSupported ? "piper" : "browser", voice: "auto", voiceA: "auto", voiceB: "auto", rate: 1, premiumVoice: {} },
         JSON.parse(localStorage.getItem("lumen.voice") || "{}"),
       );
       this.items = [];
@@ -150,6 +199,14 @@
     premiumVoiceFor(role, voices) {
       const engine = this.settings.engine;
       const pv = this.settings.premiumVoice[engine] || {};
+      if (engine === "piper") {
+        // Voix choisie si elle parle la langue du texte, sinon la voix par défaut de cette langue.
+        const lang = (this.lang || "fr").slice(0, 2);
+        const ok = (id) => id && PIPER_VOICES.some((v) => v.id === id && v.lang === lang) && id;
+        const [fa, fb] = PIPER_DEFAULTS[lang] || PIPER_DEFAULTS.fr;
+        if (!role) return ok(pv.main) || fa;
+        return role === "A" ? ok(pv.A) || fa : ok(pv.B) || fb;
+      }
       const list = voices[engine] || [];
       const main = pv.main || list[0]?.id;
       if (!role) return main;
@@ -221,6 +278,7 @@
       this.audio.pause();
       this.index = i;
       this.emit("item", i);
+      this.needPiperCheck = true;
       if (this.settings.engine === "browser") this.runBrowser(this.gen);
       else this.runPremium(this.gen);
     }
@@ -269,7 +327,8 @@
     chunkFrom(i, small = false) {
       // Regroupe des phrases consécutives (même voix) en un morceau audio.
       // Le premier morceau est court pour que la lecture démarre vite.
-      const limit = small ? 320 : 900;
+      // Piper calcule l'audio sur l'appareil : morceaux plus courts pour démarrer vite.
+      const limit = this.settings.engine === "piper" ? (small ? 180 : 600) : small ? 320 : 900;
       const role = this.items[i]?.role;
       let j = i, len = 0;
       while (j < this.items.length && this.items[j].role === role && (j === i || len + this.items[j].text.length <= limit)) {
@@ -283,6 +342,13 @@
     fetchAudio(chunk) {
       const voice = this.premiumVoiceFor(chunk.role, this.premiumVoices || {});
       const key = this.settings.engine + "|" + voice + "|" + chunk.text;
+      if (!this.audioCache.has(key) && this.settings.engine === "piper") {
+        const p = piper()
+          .then((m) => m.synth(voice, chunk.text, (pr) => this.emit("download", { voice, ...pr })))
+          .then((blob) => URL.createObjectURL(blob));
+        p.catch(() => this.audioCache.delete(key));
+        this.audioCache.set(key, p);
+      }
       if (!this.audioCache.has(key)) {
         const p = (window.lumenFetch || fetch)("/api/tts", {
           method: "POST",
@@ -307,6 +373,29 @@
       const chunk = this.chunkFrom(this.index, this.state !== "playing");
       this.state = "loading";
       this.emit("state", this.state);
+      // Première utilisation d'une voix Piper : on demande avant de télécharger le modèle.
+      if (this.settings.engine === "piper" && this.needPiperCheck) {
+        this.needPiperCheck = false;
+        let missing = [];
+        try {
+          missing = await this.missingPiperVoices([...new Set(this.items.map((it) => it.role ?? null))]);
+        } catch {}
+        if (gen !== this.gen) return;
+        if (missing.length) {
+          const mb = missing.reduce((n, v) => n + v.size, 0);
+          const names = missing.map((v) => v.name.split(" — ")[0]).join(" et ");
+          const ok = confirm(
+            `Voix naturelle gratuite : il faut d'abord télécharger la voix ${names} (environ ${mb} Mo, une seule fois — conseillé en Wi-Fi).\n\nOK = télécharger · Annuler = utiliser la voix du navigateur`,
+          );
+          if (gen !== this.gen) return;
+          if (!ok) {
+            this.settings.engine = "browser";
+            this.save();
+            this.emit("settings");
+            return this.runBrowser(gen);
+          }
+        }
+      }
       let url;
       try {
         url = await this.fetchAudio(chunk);
@@ -321,7 +410,7 @@
       if (gen !== this.gen) return;
       // Pré-chargement des deux morceaux suivants pour éviter les blancs.
       let n = chunk.end;
-      for (let k = 0; k < 2 && n < this.items.length; k++) {
+      for (let k = 0; k < (this.settings.engine === "piper" ? 1 : 2) && n < this.items.length; k++) {
         const c = this.chunkFrom(n);
         this.fetchAudio(c).catch(() => {});
         n = c.end;
@@ -366,6 +455,28 @@
     }
 
     /** Assemble tout l'audio premium en un seul MP3 (pour le podcast). */
+    /** Voix Piper pas encore téléchargées pour les rôles utilisés. */
+    async missingPiperVoices(roles = [null]) {
+      if (this.settings.engine !== "piper") return [];
+      const have = await (await piper()).downloaded();
+      const ids = [...new Set(roles.map((r) => this.premiumVoiceFor(r, {})))];
+      return ids.filter((id) => !have.includes(id)).map((id) => PIPER_VOICES.find((v) => v.id === id) || { id, name: id, size: 60 });
+    }
+
+    /** Tout l'audio en un fichier : MP3 (voix serveur) ou WAV (voix Piper). */
+    async exportAudio(onProgress) {
+      const blobs = [];
+      let i = 0;
+      while (i < this.items.length) {
+        const c = this.chunkFrom(i);
+        const url = await this.fetchAudio(c);
+        blobs.push(await (await fetch(url)).blob());
+        i = c.end;
+        onProgress?.(i / this.items.length);
+      }
+      if (this.settings.engine === "piper") return { blob: await concatWav(blobs), ext: "wav" };
+      return { blob: new Blob(blobs, { type: "audio/mpeg" }), ext: "mp3" };
+    }
     async exportMp3(onProgress) {
       const blobs = [];
       let i = 0;
@@ -395,5 +506,6 @@
   }
 
   window.Narrator = Narrator;
+  window.PiperInfo = { voices: PIPER_VOICES, defaults: PIPER_DEFAULTS, supported: piperSupported };
   window.NarratorUtil = { sentences, detectLang, rankVoices, voiceQuality, browserVoices };
 })();

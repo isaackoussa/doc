@@ -30,6 +30,7 @@ export function humanError(e) {
     if (e.status === 401) return "Clé API Anthropic invalide (ANTHROPIC_API_KEY).";
     if (e.status === 429) return "Trop de requêtes : patientez quelques secondes puis réessayez.";
     if (e.status >= 500) return "Le service d'IA est momentanément indisponible. Réessayez.";
+    if (e.status === 400) return `Requête refusée par Claude : ${e.message}`;
   }
   return e?.message || "Erreur inattendue";
 }
