@@ -19,10 +19,26 @@
     if (last < text.length) onText(text.slice(last));
   }
 
+  // Commandes LaTeX absentes de KaTeX mais courantes en actuariat.
+  const MACROS = {
+    "\\prescript": "{}^{#1}_{#2}{#3}", // \prescript{}{t}{p}_x → ₜpₓ
+    "\\sideset": "{}#1{#3}#2", // \sideset{_t}{_x}p
+    "\\actsymb": "{}#1{#2}", // forme simplifiée
+    "\\Var": "\\operatorname{Var}",
+    "\\Cov": "\\operatorname{Cov}",
+    "\\E": "\\mathbb{E}",
+  };
   function tex(src, display) {
     if (!window.katex) return esc(display ? `$$${src}$$` : `$${src}$`);
     try {
-      return katex.renderToString(src, { displayMode: display, throwOnError: false, strict: "ignore", trust: false, output: "htmlAndMathml" });
+      return katex.renderToString(src, {
+        displayMode: display,
+        throwOnError: false,
+        strict: "ignore",
+        trust: false,
+        output: "htmlAndMathml",
+        macros: { ...MACROS },
+      });
     } catch {
       return `<code>${esc(src)}</code>`;
     }
@@ -78,15 +94,21 @@
     prime: "prime", ln: "logarithme népérien de", log: "logarithme de", exp: "exponentielle de", sin: "sinus de", cos: "cosinus de",
     tan: "tangente de", arcsin: "arc sinus de", arccos: "arc cosinus de", arctan: "arc tangente de", sinh: "sinus hyperbolique de",
     cosh: "cosinus hyperbolique de", max: "maximum de", min: "minimum de", det: "déterminant de", gcd: "PGCD de",
-    mid: "divise", vert: "", "|": "norme", "%": "pour cent", "{": "", "}": "", ",": " ", ";": " ", ":": " ", "!": "", quad: " ", qquad: " ",
+    mid: "divise", vert: "", Pr: "probabilité", P: "probabilité", Var: "variance", Cov: "covariance", E: "espérance",
+    angln: "n", ddagger: "", dagger: "", "|": "norme", "%": "pour cent", "{": "", "}": "", ",": " ", ";": " ", ":": " ", "!": "", quad: " ", qquad: " ",
   };
   const SKIP = new Set(["left", "right", "big", "Big", "bigg", "Bigg", "displaystyle", "textstyle", "limits", "nolimits", "middle"]);
   const KEEP_ARG = new Set(["text", "mathrm", "mathbf", "mathit", "mathsf", "mathtt", "textbf", "textit", "operatorname", "boldsymbol", "mathcal", "mathbb", "mathfrak", "mbox"]);
   const SETS = { R: "R", N: "N", Z: "Z", Q: "Q", C: "C" };
   const OPS = { "+": "plus", "-": "moins", "=": "égal", "<": "inférieur à", ">": "supérieur à", "/": "sur", "*": "fois", "'": "prime", "!": "factorielle", "|": "", "&": "", "~": " " };
+  const ENV_LABEL = { pmatrix: "matrice :", bmatrix: "matrice :", matrix: "matrice :", vmatrix: "déterminant :", cases: "", array: "tableau :" };
+  const FUNCY = new Set(["psi", "phi", "varphi", "Phi", "Psi", "Gamma", "Pr", "P", "E", "Var", "Cov", "pi"]);
+  const OPERATOR_NAMES = { var: "variance", cov: "covariance", corr: "corrélation", argmax: "argument du maximum", argmin: "argument du minimum" };
 
   function speakTex(s) {
     let i = 0;
+    const env = []; // environnements ouverts (matrice, cas…)
+    let subDepth = 0; // > 0 : on lit un indice (« m| » = différé)
     const ws = () => {
       while (i < s.length && /\s/.test(s[i])) i++;
     };
@@ -96,6 +118,27 @@
       if (/[a-zA-Z]/.test(s[i])) while (i < s.length && /[a-zA-Z]/.test(s[i])) name += s[i++];
       else name = s[i++] || "";
       return name;
+    }
+    /** Si une parenthèse ouvrante suit (éventuellement après \left), la consomme : « … de ». */
+    function eatParen() {
+      const m = /^(?:\s|\\[!,;:])*(?:\\left\s*)?[([]/.exec(s.slice(i));
+      if (!m) return "";
+      i += m[0].length;
+      return " de";
+    }
+    function rawGroup() {
+      ws();
+      if (s[i] !== "{") return "";
+      let depth = 0, out = "";
+      for (; i < s.length; i++) {
+        if (s[i] === "{" && depth++ === 0) continue;
+        if (s[i] === "}" && --depth === 0) {
+          i++;
+          break;
+        }
+        out += s[i];
+      }
+      return out.trim();
     }
     function group() {
       ws();
@@ -153,7 +196,35 @@
           return lo ? `limite quand ${lo} de` : "limite de";
         }
         if (name === "vec" || name === "overrightarrow") return `vecteur ${group()}`;
-        if (name === "overline" || name === "bar") return `${group()} barre`;
+        if (name === "overline") {
+          // \overline{n}| : durée n (angle actuariel) — on lit simplement « n »
+          const x = group();
+          ws();
+          if (s[i] === "|") return (i++, x);
+          return `${x} barre`;
+        }
+        if (name === "angl") return group();
+        if (name === "bar") return `${group()} barre`;
+        if (name === "ddot") return `${group()} double point`;
+        if (name === "tilde") return `${group()} tilde`;
+        if (name === "prescript") {
+          const sup = group(), sub = group(), base = group();
+          return `${sub ? sub + " " : ""}${base}${sup ? " exposant " + sup : ""}`;
+        }
+        if (name === "sideset") {
+          const clean = (x) => speakTex(x.replace(/[_^]/g, " "));
+          const left = clean(rawGroup()), right = clean(rawGroup()), base = group();
+          return `${left} ${base} ${right}`;
+        }
+        if (name === "operatorname") {
+          const x = rawGroup().replace(/\s/g, "");
+          const word = OPERATOR_NAMES[x.toLowerCase()];
+          return word ? `${word}${eatParen() || " de"}` : speakTex(x);
+        }
+        if (name === "mathbb" && /^\s*\{?\s*E\s*\}?/.test(s.slice(i))) {
+          group();
+          return `espérance de${eatParen() && ""}`;
+        }
         if (name === "hat") return `${group()} chapeau`;
         if (name === "dot") return `${group()} point`;
         if (name === "binom") return `${group()} parmi ${group()}`;
@@ -162,8 +233,17 @@
           return SETS[x.trim()] || x;
         }
         if (KEEP_ARG.has(name)) return group();
-        if (name === "begin" || name === "end") return (group(), "");
+        if (name === "begin") {
+          const e = rawGroup().replace("*", "");
+          env.push(e);
+          if (e === "array") rawGroup(); // spécification des colonnes
+          return ENV_LABEL[e] ?? "";
+        }
+        if (name === "end") return (rawGroup(), env.pop(), "");
         if (name === "\\") return ", ";
+        if (FUNCY.has(name)) return `${WORDS[name] ?? name}${eatParen()}`;
+        // exp(…), ln(…), sin(…) : le mot contient déjà « de », la parenthèse est muette
+        if (/ de$/.test(WORDS[name] || "")) return (eatParen(), WORDS[name]);
         return WORDS[name] ?? name;
       }
       if (c === "{") return group();
@@ -178,22 +258,39 @@
         if (/[fghuvwPQRF]/.test(c) && s[i] === "(") return (i++, `${c} de`);
         return c;
       }
-      if (c === "(" || c === "[") return "parenthèse";
-      if (c === ")" || c === "]") return "";
+      if (c === "(") return "parenthèse";
+      if (c === "[" || c === ")" || c === "]") return "";
+      if (c === "&") {
+        const e = env[env.length - 1];
+        return e === "cases" ? "si" : /matrix|array/.test(e || "") ? "," : "";
+      }
+      if (c === "|" && subDepth > 0) return "différé"; // ₘ|qₓ
+      if (c === ":" && subDepth > 0) return ""; // x:n
       return OPS[c] ?? c;
     }
     function item() {
+      const start = i;
       let base = atom();
+      // {}_t p_x : indice placé à gauche (notation actuarielle) → « t p x »
+      const leftIndex = !base.trim() && s.slice(start, i).replace(/\s/g, "") === "{}";
       for (;;) {
         ws();
         if (s[i] === "^") {
           i++;
           const e = group().trim();
-          base +=
-            e === "2" ? " au carré" : e === "3" ? " au cube" : e === "prime" || e === "'" ? " prime" : e === "moins 1" ? " puissance moins 1" : ` puissance ${e}`;
+          if (leftIndex && !base.trim()) base = `${e} `;
+          else if (/^parenthèse /.test(e)) base += ` exposant ${e.replace(/^parenthèse /, "")}`; // i^{(m)}
+          else if (/^[A-Z]$/.test(base.trim()) && /^[12]$/.test(e)) base += ` exposant ${e}`; // A^1_{x:n}
+          else
+            base +=
+              e === "2" ? " au carré" : e === "3" ? " au cube" : e === "prime" || e === "'" ? " prime" : e === "moins 1" ? " puissance moins 1" : ` puissance ${e}`;
         } else if (s[i] === "_") {
           i++;
-          base += ` indice ${group().trim()}`;
+          subDepth++;
+          const sub = group().trim();
+          subDepth--;
+          if (leftIndex && !base.trim()) base = `${sub} `;
+          else base += ` indice ${sub}`;
         } else break;
       }
       return base;
