@@ -468,7 +468,7 @@
   });
   narrator.on("item", (i) => {
     const n = narrator.items.length;
-    $("#playerSub").textContent = `${i + 1} / ${n} · ${engineLabel()}`;
+    $("#playerSub").innerHTML = `${i + 1} / ${n}<span class="engine-label"> · ${esc(engineLabel())}</span>`;
     if (state.playing?.kind === "doc" && state.doc?.id === state.playing.id) {
       markCurrent(i);
       (state.cloud.positions[state.playing.id] = i), persist();
@@ -608,7 +608,7 @@
   });
   narrator.on("settings", () => {
     $("#pRate").textContent = fmtRate(narrator.settings.rate);
-    if (narrator.items.length) $("#playerSub").textContent = `${narrator.index + 1} / ${narrator.items.length} · ${engineLabel()}`;
+    if (narrator.items.length) $("#playerSub").innerHTML = `${narrator.index + 1} / ${narrator.items.length}<span class="engine-label"> · ${esc(engineLabel())}</span>`;
   });
   narrator.on("voices", () => {
     if ($("#settingsDlg").open) fillSettings();
