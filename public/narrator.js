@@ -142,6 +142,9 @@
     return new Blob([out], { type: "audio/wav" });
   }
 
+  /** Texte réellement prononcé : formules ($…$, √, ≤…) converties en mots. */
+  const say = (t) => (window.MathText ? window.MathText.toSpeech(t) : t);
+
   // ---------- Narrator ----------
   class Narrator {
     constructor() {
@@ -298,7 +301,7 @@
       if (!item) return this.finish();
       this.state = "playing";
       this.emit("state", this.state);
-      const u = new SpeechSynthesisUtterance(item.text);
+      const u = new SpeechSynthesisUtterance(say(item.text));
       const v = this.browserVoiceFor(item.role);
       if (v) {
         u.voice = v;
@@ -337,7 +340,7 @@
         if (/\n$/.test(this.items[j - 1].text)) break;
       }
       const parts = this.items.slice(i, j);
-      return { start: i, end: j, role, parts, text: parts.map((p) => p.text.trim()).join(" ") };
+      return { start: i, end: j, role, parts, text: parts.map((p) => say(p.text).trim()).join(" ") };
     }
     fetchAudio(chunk) {
       const voice = this.premiumVoiceFor(chunk.role, this.premiumVoices || {});

@@ -106,14 +106,15 @@
     setTimeout(() => t.classList.add("out"), 4200);
     setTimeout(() => t.remove(), 4700);
   }
-  function md(text) {
-    return DOMPurify.sanitize(marked.parse(text || "", { breaks: false, gfm: true }));
-  }
+  // Markdown avec formules mathématiques (KaTeX) ; texte simple avec formules.
+  const md = (text) => window.MathText.renderMarkdown(text || "");
+  const mt = (text) => window.MathText.renderInline(text);
   /** Texte lisible à voix haute à partir d'un Markdown. */
   function speechItemsFromHtml(html, role) {
     const div = document.createElement("div");
     div.innerHTML = html;
     div.querySelectorAll(".cite").forEach((c) => c.remove());
+    window.MathText.speakRendered(div); // formules → mots
     const blocks = $$("h1,h2,h3,h4,p,li,blockquote,td", div).filter((el) => !el.querySelector("p,li"));
     const texts = (blocks.length ? blocks : [div]).map((b) => b.textContent.trim()).filter(Boolean);
     const items = [];
@@ -233,7 +234,11 @@
       const pending = toastLoading(`Lecture de « ${f.name} »…`);
       try {
         if (f.size > 100 * 1024 * 1024) throw new Error("fichier trop lourd (max 100 Mo)");
-        const ex = await window.Extract.extractFile(f, { ocr, progress: (m) => pending.setText(`${f.name} — ${m}`) });
+        const ex = await window.Extract.extractFile(f, {
+          ocr,
+          forceOcr: $("#mathMode").checked,
+          progress: (m) => pending.setText(`${f.name} — ${m}`),
+        });
         if (!ex.text.trim()) throw new Error("aucun texte trouvé");
         if (ex.text.length > 4_000_000) throw new Error("document trop long (plus de 4 millions de caractères)");
         added.push(await api("/api/docs", { method: "POST", body: ex }));
@@ -312,6 +317,13 @@
     }
   });
 
+  // Mode « formules » : les PDF sont lus par l'IA, qui réécrit les formules en LaTeX.
+  $("#mathMode").checked = store.get("mathMode", false);
+  $("#mathMode").addEventListener("change", (e) => {
+    store.set("mathMode", e.target.checked);
+    if (e.target.checked) toast("Les prochains PDF seront lus page par page par l'IA, pour bien écrire les formules (plus lent).", "ok");
+  });
+
   // ---------------------------------------------------------------- lecteur
   let fontSize = store.get("fontSize", 19);
   const applyFont = () => document.documentElement.style.setProperty("--doc-size", fontSize + "px");
@@ -357,12 +369,18 @@
       const pStart = m.index;
       const isHeading = para.length < 90 && !/[.!?,;:]$/.test(para.trim()) && !para.includes("\n") && para.split(" ").length < 12;
       const p = document.createElement(isHeading ? "h3" : "p");
-      for (const s of sentences(para, lang)) {
+      // Les formules ($…$) sont masquées pendant le découpage en phrases pour ne
+      // jamais être coupées (même longueur → les positions restent exactes).
+      const withMath = window.MathText.hasMath(para);
+      const masked = withMath ? para.replace(new RegExp(window.MathText.MATH_RE.source, "g"), (f) => "x".repeat(f.length)) : para;
+      for (const s of sentences(masked, lang)) {
+        const raw = para.slice(s.index, s.index + s.text.length);
         const span = document.createElement("span");
         span.className = "s";
-        span.textContent = s.text;
+        if (withMath) span.innerHTML = mt(raw);
+        else span.textContent = raw;
         span.dataset.i = sents.length;
-        sents.push({ text: s.text.replace(/\s+/g, " "), start: pStart + s.index, end: pStart + s.index + s.text.length, el: span });
+        sents.push({ text: raw.replace(/\s+/g, " "), start: pStart + s.index, end: pStart + s.index + raw.length, el: span });
         p.append(span);
       }
       frag.append(p);
@@ -641,13 +659,13 @@
     box.innerHTML = `
       <div class="intro-card">
         <div class="eyebrow">Vue d'ensemble</div>
-        <p>${esc(o.summary)}</p>
-        <div class="topics">${(o.topics || []).map((t) => `<span class="topic">${esc(t)}</span>`).join("")}</div>
+        <p>${mt(o.summary)}</p>
+        <div class="topics">${(o.topics || []).map((t) => `<span class="topic" data-raw="${esc(t)}">${mt(t)}</span>`).join("")}</div>
         <div class="intro-actions"><button class="link" id="listenOverview">▶ Écouter</button></div>
       </div>
-      <div class="suggestions">${(o.questions || []).map((q) => `<button class="suggestion">${esc(q)}</button>`).join("")}</div>`;
-    $$(".suggestion", box).forEach((b) => b.addEventListener("click", () => ask(b.textContent)));
-    $$(".topic", box).forEach((b) => b.addEventListener("click", () => ask(`Explique-moi : ${b.textContent}`)));
+      <div class="suggestions">${(o.questions || []).map((q) => `<button class="suggestion" data-raw="${esc(q)}">${mt(q)}</button>`).join("")}</div>`;
+    $$(".suggestion", box).forEach((b) => b.addEventListener("click", () => ask(b.dataset.raw)));
+    $$(".topic", box).forEach((b) => b.addEventListener("click", () => ask(`Explique-moi : ${b.dataset.raw}`)));
     $("#listenOverview", box).addEventListener("click", () => speakItems(sentences(o.summary).map((s) => ({ text: s.text })), "Vue d'ensemble", { kind: "note" }));
   }
 
@@ -928,13 +946,13 @@
   // --- quiz
   function renderQuiz(q, body) {
     let answered = 0, good = 0;
-    body.innerHTML = `<div class="quiz"><h4>${esc(q.title)}</h4><div class="score muted small" id="quizScore">0 / ${q.questions.length}</div></div>`;
+    body.innerHTML = `<div class="quiz"><h4>${mt(q.title)}</h4><div class="score muted small" id="quizScore">0 / ${q.questions.length}</div></div>`;
     const wrap = $(".quiz", body);
     q.questions.forEach((item, qi) => {
       const card = document.createElement("div");
       card.className = "q";
-      card.innerHTML = `<p class="q-text"><span class="q-num">${qi + 1}</span>${esc(item.question)}</p>
-        <div class="opts">${item.options.map((o, oi) => `<button class="opt" data-oi="${oi}"><span>${"ABCD"[oi] || oi + 1}</span>${esc(o)}</button>`).join("")}</div>
+      card.innerHTML = `<p class="q-text"><span class="q-num">${qi + 1}</span>${mt(item.question)}</p>
+        <div class="opts">${item.options.map((o, oi) => `<button class="opt" data-oi="${oi}"><span>${"ABCD"[oi] || oi + 1}</span><span class="opt-text">${mt(o)}</span></button>`).join("")}</div>
         <div class="expl hidden"></div>`;
       card.addEventListener("click", (e) => {
         const b = e.target.closest(".opt");
@@ -950,7 +968,7 @@
           else if (k === oi) x.classList.add("wrong");
         });
         const ex = $(".expl", card);
-        ex.innerHTML = `<b>${ok ? "Bonne réponse !" : "Pas tout à fait."}</b> ${esc(item.explanation)}`;
+        ex.innerHTML = `<b>${ok ? "Bonne réponse !" : "Pas tout à fait."}</b> ${mt(item.explanation)}`;
         ex.classList.remove("hidden");
         $("#quizScore", body).textContent = `${good} / ${answered} bonnes réponses${answered === q.questions.length ? ` — ${Math.round((good / answered) * 100)} %` : ""}`;
       });
@@ -975,8 +993,8 @@
     const flash = $(".flash", body);
     const draw = () => {
       flash.classList.remove("flipped");
-      $(".front", flash).textContent = cards[i].front;
-      $(".back", flash).textContent = cards[i].back;
+      $(".front", flash).innerHTML = mt(cards[i].front);
+      $(".back", flash).innerHTML = mt(cards[i].back);
       $('[data-a="pos"]', body).textContent = `${i + 1} / ${cards.length}`;
     };
     flash.addEventListener("click", () => flash.classList.toggle("flipped"));
@@ -1000,22 +1018,22 @@
   // --- carte mentale
   function renderMindmap(m, body) {
     const colors = ["#c2410c", "#0f766e", "#7c3aed", "#b45309", "#2563eb", "#be185d", "#4d7c0f"];
-    body.innerHTML = `<div class="mindmap"><div class="mm-root">${esc(m.central)}</div><div class="mm-branches">${m.branches
+    body.innerHTML = `<div class="mindmap"><div class="mm-root">${mt(m.central)}</div><div class="mm-branches">${m.branches
       .map(
         (b, bi) => `<details class="mm-branch" open style="--c:${colors[bi % colors.length]}">
-          <summary>${esc(b.label)}</summary>
+          <summary data-raw="${esc(b.label)}">${mt(b.label)}</summary>
           <ul>${b.children
             .map(
-              (ch) => `<li><button class="mm-leaf" title="Demander une explication">${esc(ch.label)}</button>${ch.details.length ? `<ul class="mm-details">${ch.details.map((d) => `<li>${esc(d)}</li>`).join("")}</ul>` : ""}</li>`,
+              (ch) => `<li><button class="mm-leaf" title="Demander une explication" data-raw="${esc(ch.label)}">${mt(ch.label)}</button>${ch.details.length ? `<ul class="mm-details">${ch.details.map((d) => `<li>${mt(d)}</li>`).join("")}</ul>` : ""}</li>`,
             )
             .join("")}</ul></details>`,
       )
       .join("")}</div><p class="muted small">Touchez une idée pour en discuter.</p></div>`;
     $$(".mm-leaf", body).forEach((b) =>
       b.addEventListener("click", () => {
-        const branch = b.closest(".mm-branch").querySelector("summary").textContent;
+        const branch = b.closest(".mm-branch").querySelector("summary").dataset.raw;
         $("#noteView").classList.add("hidden");
-        ask(`Dans le thème « ${branch} », explique-moi : ${b.textContent}`);
+        ask(`Dans le thème « ${branch} », explique-moi : ${b.dataset.raw}`);
       }),
     );
   }

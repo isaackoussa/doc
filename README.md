@@ -14,6 +14,7 @@ Lumen lit vos documents à voix haute et vous aide à les comprendre.
   - **Studio** : résumé, points clés, explication simple, guide d'étude, **quiz** interactif, **fiches** de révision, **carte mentale**, FAQ, glossaire, chronologie.
   - **Podcast audio** : deux voix (Léa et Hugo) discutent de vos documents pour vous les expliquer. Téléchargeable (WAV) avec les voix Piper.
   - Tout ce que vous générez est rangé dans **Notes**.
+- **Formules mathématiques** bien écrites partout (KaTeX) : dans les documents, les réponses, le quiz, les fiches et la carte mentale. La voix les lit en mots (« x au carré », « racine carrée de… »). Pour un PDF de maths, cochez « Document avec des formules » avant l'import : l'IA relit chaque page et réécrit les formules proprement.
 - Fonctionne sur ordinateur et sur téléphone.
 
 ## 100 % gratuit

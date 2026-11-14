@@ -106,7 +106,8 @@
    * @returns {Promise<{title, kind, pages, text}>}
    * opts.ocr(mediaType, base64) → texte ; opts.progress(msg)
    */
-  async function extractFile(file, { ocr, progress = () => {} } = {}) {
+  async function extractFile(file, opts = {}) {
+    const { ocr, progress = () => {} } = opts;
     const name = file.name || "document";
     const title = name.replace(/\.[^.]+$/, "");
     const e = ext(name);
@@ -128,7 +129,8 @@
         pages.push(reflow(s));
       }
       const joined = pages.filter(Boolean).join("\n\n");
-      if (joined.replace(/\s/g, "").length >= 40 * pdf.numPages) return { title, kind: "pdf", pages: pdf.numPages, text: joined };
+      const forceOcr = opts.forceOcr && ocr;
+      if (!forceOcr && joined.replace(/\s/g, "").length >= 40 * pdf.numPages) return { title, kind: "pdf", pages: pdf.numPages, text: joined };
 
       // PDF scanné : chaque page est photographiée puis lue par l'IA.
       if (!ocr) throw new Error("Ce PDF est scanné : l'IA est nécessaire pour le lire.");
@@ -148,7 +150,7 @@
         progress(`Lecture par l'IA : page ${++done}/${pdf.numPages}…`);
         return reflow(txt);
       });
-      return { title, kind: "pdf (scanné)", pages: pdf.numPages, text: texts.filter(Boolean).join("\n\n") };
+      return { title, kind: forceOcr ? "pdf (formules)" : "pdf (scanné)", pages: pdf.numPages, text: texts.filter(Boolean).join("\n\n") };
     }
 
     if (e === ".docx") {

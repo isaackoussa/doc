@@ -7,6 +7,7 @@
   <meta name="theme-color" content="#f6f3ee" media="(prefers-color-scheme: light)" />
   <meta name="theme-color" content="#16181d" media="(prefers-color-scheme: dark)" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23c2410c'/><path d='M9 22V10h3v9.5h7V22z' fill='white'/></svg>" />
+  <link rel="stylesheet" href="/vendor/katex/katex.min.css" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -29,6 +30,9 @@
         <button class="btn" id="pasteBtn" title="Coller du texte">Coller</button>
       </div>
       <p class="hint">PDF, Word, texte, pages web ou photos de documents. Glissez-déposez ici.</p>
+      <label class="check small math-mode" title="Les PDF sont lus page par page par l'IA, qui réécrit les formules proprement (plus lent)">
+        <input type="checkbox" id="mathMode" /> <span>Document avec des formules (lecture par l'IA)</span>
+      </label>
 
       <div class="sources-tools">
         <label class="check"><input type="checkbox" id="selectAll" /> <span>Tout sélectionner</span></label>
@@ -276,6 +280,8 @@
   <script src="/vendor/identity.js"></script>
   <script src="/vendor/marked.js"></script>
   <script src="/vendor/purify.js"></script>
+  <script src="/vendor/katex/katex.min.js"></script>
+  <script src="math.js"></script>
   <script src="extract.js"></script>
   <script src="narrator.js"></script>
   <script src="app.js"></script>
