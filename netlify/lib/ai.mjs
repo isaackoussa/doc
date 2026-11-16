@@ -2,6 +2,7 @@
 // Par défaut : Google Gemini (offre gratuite). Claude reste disponible en option.
 import * as gemini from "./providers/gemini.mjs";
 import * as claude from "./providers/claude.mjs";
+import * as slidesAI from "./slides-ai.mjs";
 
 const PROVIDERS = { gemini, claude };
 
@@ -176,23 +177,37 @@ export const STUDIO = {
     schema: obj({
       title: str,
       subtitle: str,
+      theme: { type: "string", enum: ["aurore", "ocean", "corail", "foret", "minuit", "papier"] },
       slides: arr(
         obj({
+          layout: { type: "string", enum: ["puces", "cartes", "chiffres", "etapes", "comparaison", "formule", "citation", "section"] },
           title: str,
-          layout: { type: "string", enum: ["puces", "section", "formule", "citation"] },
+          icon: str,
           bullets: arr(str),
+          items: arr(obj({ icon: str, title: str, text: str })),
           formula: str,
           notes: str,
         }),
       ),
     }),
-    prompt: `Crée une présentation (diaporama, type PowerPoint) pour un exposé oral à partir des documents.
-- \`title\` : titre de l'exposé ; \`subtitle\` : sous-titre court (contexte, public ou question traitée).
-- \`slides\` (la diapositive de titre est ajoutée automatiquement, ne la mets pas) : commence par une diapositive « Plan » ou « Introduction », termine par « Conclusion » (ou « À retenir »).
-- Pour chaque diapositive : \`title\` court (2 à 7 mots) ; \`bullets\` = 3 ou 4 puces courtes (12 mots maximum chacune, pas de phrases longues, pas de numérotation) ; \`notes\` = ce que l'orateur dit pendant cette diapositive, à l'oral, 2 à 4 phrases naturelles qui développent les puces.
-- \`layout\` : « puces » (cas général) ; « section » pour annoncer une grande partie (\`bullets\` = 0 ou 1 phrase d'accroche) ; « formule » quand une formule clé est au centre de la diapositive ; « citation » pour une phrase forte ou une définition (la mettre comme unique puce).
-- \`formula\` : pour « formule », la formule en LaTeX SANS les $ (ex. \\Delta = b^2 - 4ac) ; sinon une chaîne vide. Dans les puces et les notes, les formules s'écrivent en LaTeX entre $…$.
-- Progression logique, une idée par diapositive, vocabulaire adapté au public, aucune information inventée.`,
+    prompt: `Crée une présentation BELLE, VIVANTE et MÉMORABLE (type PowerPoint de conférence, pas un document scolaire neutre) pour un exposé oral à partir des documents.
+
+Ensemble :
+- \`title\` : titre accrocheur (pas juste le nom du chapitre) ; \`subtitle\` : sous-titre court qui donne envie (question, promesse, contexte).
+- \`theme\` : l'ambiance visuelle la plus adaptée au sujet : « aurore » (violet/rose, moderne, créatif), « ocean » (bleu/turquoise, sciences, finance, calme), « corail » (crème/orange chaleureux, sciences humaines, éducation), « foret » (vert/or, nature, biologie, développement durable), « minuit » (noir/vert néon, technologie, données, impact), « papier » (ivoire éditorial, histoire, littérature, droit).
+- \`slides\` (la diapositive de titre est ajoutée automatiquement) : commence par une diapositive d'accroche ou de plan, termine par « À retenir » ou une conclusion forte.
+
+Chaque diapositive : \`title\` percutant (2 à 7 mots), \`icon\` = UN emoji qui illustre l'idée (📊 🧠 ⚖️ 🚀 🔬 💡 🏛️ 🌍 📈 🧮…), \`notes\` = ce que l'orateur dit à l'oral (2 à 4 phrases naturelles). Choisis la mise en page (\`layout\`) qui rend l'idée la plus visuelle, et VARIE-les (jamais 3 fois la même de suite) :
+- « cartes » : 2 à 4 idées côte à côte → \`items\` (\`icon\` emoji, \`title\` 1 à 4 mots, \`text\` ≤ 15 mots). Idéal pour des notions, causes, avantages.
+- « chiffres » : 2 à 4 chiffres clés TIRÉS DES DOCUMENTS → \`items\` (\`title\` = la valeur courte, ex. « 78 % », « 1789 », « ×3 » ; \`text\` = ce qu'elle signifie, ≤ 10 mots ; \`icon\` emoji). N'invente jamais de chiffre : sans chiffres réels, choisis une autre mise en page.
+- « etapes » : processus, méthode ou chronologie en 3 à 5 étapes → \`items\` (\`title\` court, \`text\` ≤ 12 mots, \`icon\` emoji).
+- « comparaison » : deux côtés opposés ou deux approches → exactement 2 \`items\` (\`title\` = nom du côté, \`icon\` emoji, \`text\` = 2 à 4 points séparés par « ; »).
+- « puces » : 3 ou 4 puces très courtes dans \`bullets\` (≤ 12 mots), quand aucune autre mise en page ne convient.
+- « formule » : une formule clé au centre → \`formula\` en LaTeX SANS les $ (ex. \\Delta = b^2 - 4ac), avec 1 à 3 \`bullets\` d'explication.
+- « citation » : une phrase forte, une définition ou une citation → unique élément de \`bullets\`.
+- « section » : annonce une grande partie → \`bullets\` = 0 ou 1 phrase d'accroche.
+Les champs non utilisés par la mise en page restent vides ([] ou ""). Dans les puces, textes et notes, les formules s'écrivent en LaTeX entre $…$.
+Progression logique, une idée par diapositive, ton dynamique et clair, aucune information inventée.`,
     lengths: { court: "6 diapositives", moyen: "10 diapositives", long: "15 diapositives" },
   },
 };
@@ -207,7 +222,11 @@ export async function studio(docs, kind, { focus = "", length = "moyen", languag
   instruction += `\nLangue : ${language || "français"}.`;
   if (!tool.schema) instruction += "\nRéponds en Markdown.";
 
-  const text = await impl().generate({ docs, instruction, schema: tool.schema, effort: tool.effort || "medium", system: SYSTEM_BASE, onProgress });
+  // Les présentations ont leur propre IA (quota séparé), sauf si aucune clé Gemini n'est configurée.
+  const text =
+    kind === "slides" && slidesAI.configured()
+      ? (await slidesAI.generate({ docs, instruction, schema: tool.schema, system: SYSTEM_BASE, onProgress })).text
+      : await impl().generate({ docs, instruction, schema: tool.schema, effort: tool.effort || "medium", system: SYSTEM_BASE, onProgress });
   if (!tool.schema) return { format: "markdown", content: text };
   try {
     return { format: "json", content: JSON.parse(text) };

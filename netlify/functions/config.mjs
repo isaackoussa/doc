@@ -1,6 +1,7 @@
 // Configuration publique : IA et voix disponibles, outils du studio.
 import { aiEnabled, provider, modelName, STUDIO } from "../lib/ai.mjs";
 import { listVoices, ttsProviders } from "../lib/tts.mjs";
+import { info as slidesInfo } from "../lib/slides-ai.mjs";
 import { handle, json, devUser } from "../lib/http.mjs";
 
 export default handle(async () =>
@@ -11,6 +12,7 @@ export default handle(async () =>
     tts: ttsProviders(),
     voices: await listVoices(),
     devUser: devUser()?.email || null,
+    slidesAI: slidesInfo(),
     studio: Object.fromEntries(Object.entries(STUDIO).map(([k, v]) => [k, { label: v.label }])),
   }),
 );

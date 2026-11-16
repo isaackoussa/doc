@@ -12,7 +12,7 @@ Lumen lit vos documents à voix haute et vous aide à les comprendre.
   - **Vue d'ensemble** automatique et questions suggérées.
   - Sélectionnez un passage dans le texte → **« Expliquer ce passage »**.
   - **Studio** : résumé, points clés, explication simple, guide d'étude, **quiz** interactif, **fiches** de révision, **carte mentale**, FAQ, glossaire, chronologie.
-  - **Présentation (PowerPoint)** : diapositives et notes de l'orateur générées à partir de vos documents ; modification diapo par diapo, 4 thèmes, projection plein écran, répétition à voix haute (la diapositive suit la voix), téléchargement en **PowerPoint** (.pptx modifiable) ou en **PDF** (formules exactes).
+  - **Présentation (PowerPoint)** : de vraies diapositives de conférence générées à partir de vos documents — 6 thèmes (Aurore, Océan, Corail, Forêt, Minuit, Papier), icônes, mises en page variées (cartes, chiffres clés, étapes, comparaison, formule, citation, partie), animations et notes de l'orateur. Modification diapo par diapo, projection plein écran, répétition à voix haute, téléchargement en **PowerPoint** (même design, modifiable) ou **PDF** (formules exactes). Les présentations ont **leur propre IA** (voir ci-dessous).
   - **Podcast audio** : deux voix (Léa et Hugo) discutent de vos documents pour vous les expliquer. Téléchargeable (WAV) avec les voix Piper.
   - Tout ce que vous générez est rangé dans **Notes**.
 - **Formules mathématiques** bien écrites partout (KaTeX) : dans les documents, les réponses, le quiz, les fiches et la carte mentale. La voix les lit en mots (« x au carré », « racine carrée de… »). Pour un PDF de maths, cochez « Document avec des formules » avant l'import : l'IA relit chaque page et réécrit les formules proprement.
@@ -25,6 +25,10 @@ Lumen lit vos documents à voix haute et vous aide à les comprendre.
 - **Voix : Piper**, calculée sur votre appareil, gratuite et sans limite.
 - **Hébergement : Netlify**, offre gratuite (fonctions, stockage et comptes inclus, dans les limites du plan gratuit).
 - Claude (Anthropic) reste disponible en option si vous voulez passer à une IA payante plus tard.
+
+## IA des présentations : quota séparé
+
+Chez Google, le quota gratuit est compté **par modèle** et **par projet (clé)**. Les présentations utilisent donc leur propre chaîne : la clé `GEMINI_SLIDES_API_KEY` si elle existe, puis la clé principale, et pour chacune plusieurs modèles (Flash, Flash-Lite…). Quand un quota est épuisé, l'app passe **immédiatement** au suivant au lieu d'attendre. Aucune IA gratuite n'est réellement illimitée, mais en pratique cela multiplie les présentations possibles par jour ; avec une 2e clé d'un autre compte Google, le reste de l'app (discussion, quiz…) n'entame plus du tout le quota des présentations.
 
 ## Comptes et historique
 
@@ -57,6 +61,8 @@ Netlify Identity ne fonctionne pas en local : `LUMEN_DEV_USER` simule un utilisa
 | --- | --- |
 | `GEMINI_API_KEY` | **IA gratuite** (Google Gemini) : discussion, studio, podcast, lecture des images et PDF scannés. |
 | `GEMINI_MODEL` | Modèle Gemini (défaut `gemini-flash-latest`). |
+| `GEMINI_SLIDES_API_KEY` | Facultatif : clé Gemini gratuite d'**un autre compte Google**, réservée aux présentations (quota totalement séparé). |
+| `SLIDES_MODELS` | Facultatif : modèles essayés pour les présentations, dans l'ordre. |
 | `ANTHROPIC_API_KEY` | Optionnel, payant : Claude (Anthropic). Utilisé si `AI_PROVIDER=claude` ou s'il n'y a pas de clé Gemini. |
 | `AI_PROVIDER` | `gemini` ou `claude` pour forcer le fournisseur. |
 | `CLAUDE_MODEL` | Modèle Claude (défaut `claude-opus-5-5`). |
