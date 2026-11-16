@@ -6,7 +6,14 @@
   <title>Lumen — lire et comprendre</title>
   <meta name="theme-color" content="#f6f3ee" media="(prefers-color-scheme: light)" />
   <meta name="theme-color" content="#16181d" media="(prefers-color-scheme: dark)" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23c2410c'/><path d='M9 22V10h3v9.5h7V22z' fill='white'/></svg>" />
+  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
+  <link rel="icon" href="/icons/favicon-32.png" type="image/png" sizes="32x32" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Lumen" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <link rel="stylesheet" href="/vendor/katex/katex.min.css" />
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -15,7 +22,7 @@
     <!-- ============ SOURCES ============ -->
     <aside class="panel sources" id="sourcesPanel">
       <header class="panel-head">
-        <div class="brand"><span class="logo">L</span> Lumen</div>
+        <div class="brand"><img class="logo" src="/icons/icon.svg" alt="" /> Lumen</div>
         <button class="icon-btn" id="settingsBtn" title="Réglages de la voix et de la lecture" aria-label="Réglages">
           <svg viewBox="0 0 24 24"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
         </button>
@@ -51,7 +58,7 @@
     <main class="panel reader" id="readerPanel">
       <div class="reader-empty" id="readerEmpty">
         <div class="hero">
-          <div class="hero-mark">L</div>
+          <img class="hero-mark" src="/icons/icon.svg" alt="" />
           <h1>Envoyez un document,<br />Lumen vous le lit.</h1>
           <p>Ajoutez un PDF, un fichier Word, une photo de page ou du texte. Écoutez-le avec une voix naturelle, puis posez vos questions, générez un résumé, un quiz, des fiches ou un podcast pour mieux comprendre.</p>
           <label class="btn primary big">
@@ -273,7 +280,7 @@
   <!-- ============ CONNEXION ============ -->
   <div class="auth hidden" id="auth" data-mode="login">
     <form class="auth-card" id="authForm">
-      <div class="hero-mark small">L</div>
+      <img class="hero-mark small" src="/icons/icon.svg" alt="" />
       <h1 id="authTitle">Connexion</h1>
       <p class="muted">Connectez-vous avec votre e-mail pour retrouver vos documents, vos notes et l'historique de vos discussions sur tous vos appareils.</p>
       <label class="field" id="authEmailRow"><span>E-mail</span><input type="email" id="authEmail" autocomplete="email" placeholder="vous@exemple.com" required /></label>
