@@ -42,4 +42,13 @@ const ortDist = "node_modules/onnxruntime-web/dist";
 for (const f of await readdir(ortDist)) {
   if (/^ort-wasm-simd-threaded\.(mjs|wasm)$/.test(f)) await copyFile(`${ortDist}/${f}`, `${out}/ort/${f}`);
 }
+// Icônes des présentations (Lucide, ISC) : uniquement celles proposées à l'IA.
+const { ICON_NAMES } = await import("../netlify/lib/icons.mjs");
+const { readFile, writeFile } = await import("node:fs/promises");
+const icons = {};
+for (const name of ICON_NAMES) {
+  const svg = await readFile(`node_modules/lucide-static/icons/${name}.svg`, "utf8");
+  icons[name] = svg.slice(svg.indexOf("<svg")).replace(/\s*class="[^"]*"/, "").replace(/\s+/g, " ").trim();
+}
+await writeFile(`${out}/icons.json`, JSON.stringify(icons));
 console.log("public/vendor prêt");

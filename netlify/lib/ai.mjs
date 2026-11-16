@@ -3,6 +3,7 @@
 import * as gemini from "./providers/gemini.mjs";
 import * as claude from "./providers/claude.mjs";
 import * as slidesAI from "./slides-ai.mjs";
+import { ICON_NAMES } from "./icons.mjs";
 
 const PROVIDERS = { gemini, claude };
 
@@ -174,40 +175,58 @@ export const STUDIO = {
   slides: {
     label: "Présentation",
     effort: "medium",
-    schema: obj({
-      title: str,
-      subtitle: str,
-      theme: { type: "string", enum: ["aurore", "ocean", "corail", "foret", "minuit", "papier"] },
-      slides: arr(
-        obj({
-          layout: { type: "string", enum: ["puces", "cartes", "chiffres", "etapes", "comparaison", "formule", "citation", "section"] },
-          title: str,
-          icon: str,
-          bullets: arr(str),
-          items: arr(obj({ icon: str, title: str, text: str })),
-          formula: str,
-          notes: str,
-        }),
-      ),
-    }),
-    prompt: `Crée une présentation BELLE, VIVANTE et MÉMORABLE (type PowerPoint de conférence, pas un document scolaire neutre) pour un exposé oral à partir des documents.
+    schema: (() => {
+      const icon = { type: "string", enum: ICON_NAMES };
+      return obj({
+        title: str,
+        subtitle: str,
+        context: str,
+        icon,
+        palette: { type: "string", enum: ["sarcelle", "marine", "bordeaux", "foret", "ardoise", "prune"] },
+        slides: arr(
+          obj({
+            layout: {
+              type: "string",
+              enum: ["plan", "cartes", "liste_chiffres", "frise", "etapes", "deux_colonnes", "tableau", "chiffres", "puces", "formule", "citation", "section", "conclusion"],
+            },
+            title: str,
+            icon,
+            kicker: str,
+            lead: str,
+            items: arr(obj({ icon, label: str, title: str, text: str, highlight: { type: "boolean" } })),
+            columns: arr(obj({ icon, title: str, points: arr(str) })),
+            figures: arr(obj({ value: str, label: str })),
+            table: obj({ headers: arr(str), rows: arr(arr(str)) }),
+            alert: obj({ title: str, text: str }),
+            formula: str,
+            notes: str,
+          }),
+        ),
+      });
+    })(),
+    prompt: `Crée la présentation d'un exposé oral (PowerPoint) au style PROFESSIONNEL et ÉDITORIAL, comme un très bon exposé universitaire ou un support de cabinet de conseil : sobre, élégant, dense en informations précises, jamais « décoratif ».
 
 Ensemble :
-- \`title\` : titre accrocheur (pas juste le nom du chapitre) ; \`subtitle\` : sous-titre court qui donne envie (question, promesse, contexte).
-- \`theme\` : l'ambiance visuelle la plus adaptée au sujet : « aurore » (violet/rose, moderne, créatif), « ocean » (bleu/turquoise, sciences, finance, calme), « corail » (crème/orange chaleureux, sciences humaines, éducation), « foret » (vert/or, nature, biologie, développement durable), « minuit » (noir/vert néon, technologie, données, impact), « papier » (ivoire éditorial, histoire, littérature, droit).
-- \`slides\` (la diapositive de titre est ajoutée automatiquement) : commence par une diapositive d'accroche ou de plan, termine par « À retenir » ou une conclusion forte.
+- \`title\` : titre clair et sérieux (ex. « Le contrat d'assurance en zone CIMA ») ; \`subtitle\` : ce que couvre l'exposé (ex. « De sa formation à son exécution : règles, mécanismes et cas pratique ») ; \`context\` : petite mention de pied de page (ex. « Exposé de groupe · Code des assurances CIMA ») ; \`icon\` : icône du sujet ; \`palette\` : « sarcelle » (vert profond et or, par défaut), « marine » (bleu nuit et or), « bordeaux », « foret », « ardoise » (gris et orange), « prune ».
+- \`slides\` (la diapositive de titre est ajoutée automatiquement) : 1re = « plan » (problématique + parties), dernière = « conclusion ».
 
-Chaque diapositive : \`title\` percutant (2 à 7 mots), \`icon\` = UN emoji qui illustre l'idée (📊 🧠 ⚖️ 🚀 🔬 💡 🏛️ 🌍 📈 🧮…), \`notes\` = ce que l'orateur dit à l'oral (2 à 4 phrases naturelles). Choisis la mise en page (\`layout\`) qui rend l'idée la plus visuelle, et VARIE-les (jamais 3 fois la même de suite) :
-- « cartes » : 2 à 4 idées côte à côte → \`items\` (\`icon\` emoji, \`title\` 1 à 4 mots, \`text\` ≤ 15 mots). Idéal pour des notions, causes, avantages.
-- « chiffres » : 2 à 4 chiffres clés TIRÉS DES DOCUMENTS → \`items\` (\`title\` = la valeur courte, ex. « 78 % », « 1789 », « ×3 » ; \`text\` = ce qu'elle signifie, ≤ 10 mots ; \`icon\` emoji). N'invente jamais de chiffre : sans chiffres réels, choisis une autre mise en page.
-- « etapes » : processus, méthode ou chronologie en 3 à 5 étapes → \`items\` (\`title\` court, \`text\` ≤ 12 mots, \`icon\` emoji).
-- « comparaison » : deux côtés opposés ou deux approches → exactement 2 \`items\` (\`title\` = nom du côté, \`icon\` emoji, \`text\` = 2 à 4 points séparés par « ; »).
-- « puces » : 3 ou 4 puces très courtes dans \`bullets\` (≤ 12 mots), quand aucune autre mise en page ne convient.
-- « formule » : une formule clé au centre → \`formula\` en LaTeX SANS les $ (ex. \\Delta = b^2 - 4ac), avec 1 à 3 \`bullets\` d'explication.
-- « citation » : une phrase forte, une définition ou une citation → unique élément de \`bullets\`.
-- « section » : annonce une grande partie → \`bullets\` = 0 ou 1 phrase d'accroche.
-Les champs non utilisés par la mise en page restent vides ([] ou ""). Dans les puces, textes et notes, les formules s'écrivent en LaTeX entre $…$.
-Progression logique, une idée par diapositive, ton dynamique et clair, aucune information inventée.`,
+Contenu : précis et factuel, tiré des documents — dates, articles de loi, chiffres, exemples concrets, définitions. Textes courts (1 à 2 lignes par élément), vocabulaire juste. N'invente rien : sans données, choisis une autre mise en page. Varie les mises en page, une idée par diapositive.
+
+Chaque diapositive : \`title\` (titre informatif, ex. « La formation du contrat : de la proposition à la garantie »), \`icon\`, \`notes\` (ce que l'orateur dit, 2 à 4 phrases). Champs non utilisés : "" ou [] (table : headers [] et rows [] ; alert : title "" et text ""). Mises en page (\`layout\`) et champs à remplir :
+- « plan » : \`kicker\` = « Problématique », \`lead\` = la question centrale ; \`items\` = 3 à 4 parties (\`label\` = « I », « II »…, \`title\` = nom de la partie, \`text\` = ce qu'elle couvre).
+- « cartes » : 3 à 6 notions → \`items\` (\`icon\`, \`title\`, \`text\` ≤ 20 mots) ; \`lead\` = phrase de synthèse facultative.
+- « liste_chiffres » : à gauche 3 à 4 notions (\`items\` : \`icon\`, \`title\`, \`text\`) ; à droite un panneau sombre : \`kicker\` = titre du panneau (ex. « Exemple : 100 000 villas assurées »), \`figures\` = 2 à 3 chiffres (\`value\` ex. « 0,5 % », « 9 840 FCFA » ; \`label\` = sens) ; \`lead\` = remarque courte facultative.
+- « frise » : chronologie de 4 à 6 dates → \`items\` (\`label\` = date ou période, \`text\` = événement ≤ 15 mots, \`highlight\` = true pour la date la plus importante) ; \`lead\` = phrase de conclusion de la frise.
+- « etapes » : processus de 3 à 5 étapes → \`items\` (\`label\` = « Étape 1 » ou « Jour 0 »…, \`title\`, \`text\`, \`highlight\` = true pour une étape critique) ; \`columns\` = 0 à 2 encarts complémentaires (\`icon\`, \`title\`, \`points\`).
+- « deux_colonnes » : deux côtés (ex. obligations de l'assuré / de l'assureur) → exactement 2 \`columns\` (\`icon\`, \`title\`, \`points\` = 2 à 4 points précis) ; \`alert\` = encadré d'alerte facultatif (ex. sanction).
+- « tableau » : comparaison ou calcul → \`table\` (\`headers\` = 2 à 4 colonnes, \`rows\` = 3 à 8 lignes de cellules courtes) ; \`lead\` = règle ou conclusion ; pour un cas pratique, \`items\` = déroulé chronologique à côté du tableau (\`label\` = date, \`text\`, \`highlight\` = événement grave) et \`alert\` = résultat clé (\`title\` = valeur, ex. « 0 FCFA », \`text\` = explication).
+- « chiffres » : 3 ou 4 notions chiffrées → \`items\` (\`icon\`, \`title\`, \`text\`, \`label\` = la valeur, ex. « 2 ou 5 ans ») ; \`lead\` = phrase de synthèse.
+- « puces » : 3 à 5 \`items\` (\`title\` court + \`text\`) quand rien d'autre ne convient.
+- « formule » : \`formula\` en LaTeX SANS les $ (ex. \\Delta = b^2 - 4ac) ; \`items\` = 1 à 3 explications.
+- « citation » : \`lead\` = la phrase forte ou la définition ; \`kicker\` = sa source.
+- « section » : annonce d'une grande partie ; \`kicker\` = « Partie II »…, \`lead\` = accroche.
+- « conclusion » : \`kicker\` = « Conclusion » ; \`title\` = idée-force ; 2 \`columns\` (\`icon\`, \`title\`, \`points\`) ; \`lead\` = phrase finale mémorable.
+Dans les textes, les formules s'écrivent en LaTeX entre $…$.`,
     lengths: { court: "6 diapositives", moyen: "10 diapositives", long: "15 diapositives" },
   },
 };

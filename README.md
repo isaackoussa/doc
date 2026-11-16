@@ -12,7 +12,7 @@ Lumen lit vos documents à voix haute et vous aide à les comprendre.
   - **Vue d'ensemble** automatique et questions suggérées.
   - Sélectionnez un passage dans le texte → **« Expliquer ce passage »**.
   - **Studio** : résumé, points clés, explication simple, guide d'étude, **quiz** interactif, **fiches** de révision, **carte mentale**, FAQ, glossaire, chronologie.
-  - **Présentation (PowerPoint)** : de vraies diapositives de conférence générées à partir de vos documents — 6 thèmes (Aurore, Océan, Corail, Forêt, Minuit, Papier), icônes, mises en page variées (cartes, chiffres clés, étapes, comparaison, formule, citation, partie), animations et notes de l'orateur. Modification diapo par diapo, projection plein écran, répétition à voix haute, téléchargement en **PowerPoint** (même design, modifiable) ou **PDF** (formules exactes). Les présentations ont **leur propre IA** (voir ci-dessous).
+  - **Présentation (PowerPoint)** : un exposé au style professionnel et éditorial (fond blanc, titres à empattements, couleur sombre et or, icônes au trait) — plan avec problématique, frises chronologiques, étapes, panneaux de chiffres clés, tableaux comparatifs, cas pratiques, encadrés d'alerte, conclusion — avec les notes de l'orateur ; 6 palettes (sarcelle, bleu nuit, bordeaux, forêt, ardoise, prune). Modification diapo par diapo, projection plein écran, répétition à voix haute, téléchargement en **PowerPoint** (même mise en page, modifiable) ou **PDF**. Les présentations ont **leur propre IA** (voir ci-dessous).
   - **Podcast audio** : deux voix (Léa et Hugo) discutent de vos documents pour vous les expliquer. Téléchargeable (WAV) avec les voix Piper.
   - Tout ce que vous générez est rangé dans **Notes**.
 - **Formules mathématiques** bien écrites partout (KaTeX) : dans les documents, les réponses, le quiz, les fiches et la carte mentale. La voix les lit en mots (« x au carré », « racine carrée de… »). Pour un PDF de maths, cochez « Document avec des formules » avant l'import : l'IA relit chaque page et réécrit les formules proprement.
@@ -81,7 +81,7 @@ netlify/functions/        API (fonctions serverless)
   jobs, jobs-run          tâches longues : studio, podcast, lecture d'images (arrière-plan)
   tts, config             voix premium, configuration
 netlify/lib/              IA (Gemini par défaut, Claude en option), voix, stockage, authentification
-public/                   interface (HTML/CSS/JS)
+public/                   interface (HTML/CSS/JS) ; icônes des présentations : Lucide (licence ISC)
   extract.js              extraction du texte dans le navigateur (PDF, Word, HTML…)
   narrator.js             moteur de lecture à voix haute (Piper, navigateur, voix serveur)
   app.js                  interface : compte, sources, lecteur, discussion, studio, notes

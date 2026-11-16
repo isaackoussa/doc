@@ -36,6 +36,7 @@
     "node": ">=20.12"
   },
   "devDependencies": {
-    "esbuild": "^0.28.2"
+    "esbuild": "^0.28.2",
+    "lucide-static": "^1.73.0"
   }
 }
