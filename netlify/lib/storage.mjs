@@ -42,6 +42,11 @@ export async function loadDocs(uid, ids) {
 }
 
 export const listNotes = (uid) => listUser(notesStore(), uid);
+export async function getNote(uid, id) {
+  const note = await notesStore().get(key(uid, id), { type: "json" });
+  if (!note) throw new HttpError(404, "Note introuvable");
+  return note;
+}
 export const saveNote = (uid, note) => notesStore().setJSON(key(uid, note.id), note);
 export const deleteNote = (uid, id) => notesStore().delete(key(uid, id));
 

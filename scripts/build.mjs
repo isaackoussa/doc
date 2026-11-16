@@ -10,6 +10,7 @@ const copies = {
   "node_modules/pdfjs-dist/build/pdf.min.mjs": "pdf.min.mjs",
   "node_modules/pdfjs-dist/build/pdf.worker.min.mjs": "pdf.worker.min.mjs",
   "node_modules/mammoth/mammoth.browser.min.js": "mammoth.js",
+  "node_modules/pptxgenjs/dist/pptxgen.bundle.js": "pptxgen.bundle.js",
 };
 for (const [from, to] of Object.entries(copies)) await copyFile(from, `${out}/${to}`);
 // Formules mathématiques : KaTeX (script, styles et polices)

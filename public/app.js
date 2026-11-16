@@ -473,6 +473,7 @@
       markCurrent(i);
       (state.cloud.positions[state.playing.id] = i), persist();
     }
+    if (state.playing?.kind === "slides") window.Slides.onNarratorItem(narrator.items[i]);
     if (state.playing?.kind === "podcast") {
       const t = narrator.items[i]?.turn;
       $$(".turn").forEach((el) => el.classList.toggle("current", Number(el.dataset.t) === t));
@@ -862,7 +863,8 @@
     const btns = $$(`[data-studio="${kind}"]`);
     btns.forEach((b) => (b.disabled = true));
     try {
-      const note = await runJob({ type: "studio", kind, docIds: [...state.selected], focus: $("#studioFocus").value, length: $("#podcastLength").value });
+      const length = kind === "slides" ? $("#slidesLength").value : $("#podcastLength").value;
+      const note = await runJob({ type: "studio", kind, docIds: [...state.selected], focus: $("#studioFocus").value, length });
       job.remove();
       state.notes.unshift(note);
       updateNotesCount();
@@ -909,9 +911,28 @@
     body.innerHTML = "";
     body.scrollTop = 0;
     const r = { quiz: renderQuiz, flashcards: renderCards, mindmap: renderMindmap, podcast: renderPodcast }[note.kind];
-    if (r && note.format === "json") r(note.content, body);
+    if (note.kind === "slides" && note.format === "json") window.Slides.render(note, body, slidesCtx(note));
+    else if (r && note.format === "json") r(note.content, body);
     else body.innerHTML = `<div class="prose">${md(note.content)}</div>`;
-    $("#noteListen").classList.toggle("hidden", note.kind === "quiz" || note.kind === "flashcards");
+    $("#noteListen").classList.toggle("hidden", ["quiz", "flashcards", "slides"].includes(note.kind));
+  }
+  /** Ce dont le module de présentation a besoin : enregistrer, lire à voix haute, notifier. */
+  function slidesCtx(note) {
+    return {
+      toast,
+      save: async (content) => {
+        const saved = await api(`/api/notes/${note.id}`, { method: "PUT", body: { content } });
+        const k = state.notes.findIndex((n) => n.id === note.id);
+        if (k >= 0) state.notes[k] = saved;
+        return saved;
+      },
+      speak: (items, title) => {
+        if (!items.length) return;
+        narrator.load(items, { title });
+        state.playing = { kind: "slides", id: note.id };
+        narrator.playFrom(0);
+      },
+    };
   }
   $("#noteBack").addEventListener("click", () => $("#noteView").classList.add("hidden"));
   $("#noteDelete").addEventListener("click", async () => {

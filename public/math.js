@@ -334,5 +334,79 @@
     });
   }
 
-  window.MathText = { renderInline, renderMarkdown, toSpeech, speakTex, speakRendered, hasMath, MATH_RE };
+  // ------------------------------------------------------------------
+  // LaTeX → texte Unicode (pour PowerPoint, qui ne comprend pas le LaTeX)
+  // ------------------------------------------------------------------
+  const SUP = { 0: "⁰", 1: "¹", 2: "²", 3: "³", 4: "⁴", 5: "⁵", 6: "⁶", 7: "⁷", 8: "⁸", 9: "⁹", "+": "⁺", "-": "⁻", "=": "⁼", "(": "⁽", ")": "⁾",
+    a: "ᵃ", b: "ᵇ", c: "ᶜ", d: "ᵈ", e: "ᵉ", f: "ᶠ", g: "ᵍ", h: "ʰ", i: "ⁱ", j: "ʲ", k: "ᵏ", l: "ˡ", m: "ᵐ", n: "ⁿ", o: "ᵒ", p: "ᵖ", r: "ʳ", s: "ˢ",
+    t: "ᵗ", u: "ᵘ", v: "ᵛ", w: "ʷ", x: "ˣ", y: "ʸ", z: "ᶻ", "*": "*", "′": "′", " ": "" };
+  const SUB = { 0: "₀", 1: "₁", 2: "₂", 3: "₃", 4: "₄", 5: "₅", 6: "₆", 7: "₇", 8: "₈", 9: "₉", "+": "₊", "-": "₋", "=": "₌", "(": "₍", ")": "₎",
+    a: "ₐ", e: "ₑ", h: "ₕ", i: "ᵢ", j: "ⱼ", k: "ₖ", l: "ₗ", m: "ₘ", n: "ₙ", o: "ₒ", p: "ₚ", r: "ᵣ", s: "ₛ", t: "ₜ", u: "ᵤ", v: "ᵥ", x: "ₓ", " ": "", ",": "," };
+  const UNI = {
+    alpha: "α", beta: "β", gamma: "γ", delta: "δ", epsilon: "ε", varepsilon: "ε", zeta: "ζ", eta: "η", theta: "θ", vartheta: "ϑ", iota: "ι",
+    kappa: "κ", lambda: "λ", mu: "μ", nu: "ν", xi: "ξ", pi: "π", rho: "ρ", sigma: "σ", tau: "τ", phi: "φ", varphi: "φ", chi: "χ", psi: "ψ",
+    omega: "ω", Gamma: "Γ", Delta: "Δ", Theta: "Θ", Lambda: "Λ", Xi: "Ξ", Pi: "Π", Sigma: "Σ", Phi: "Φ", Psi: "Ψ", Omega: "Ω",
+    times: "×", cdot: "·", div: "÷", pm: "±", mp: "∓", leq: "≤", le: "≤", leqslant: "≤", geq: "≥", ge: "≥", geqslant: "≥", neq: "≠", ne: "≠",
+    approx: "≈", simeq: "≃", sim: "∼", equiv: "≡", propto: "∝", ll: "≪", gg: "≫", infty: "∞", to: "→", rightarrow: "→", longrightarrow: "⟶",
+    mapsto: "↦", Rightarrow: "⇒", implies: "⇒", Leftarrow: "⇐", Leftrightarrow: "⇔", iff: "⇔", in: "∈", notin: "∉", subset: "⊂", subseteq: "⊆",
+    supset: "⊃", cup: "∪", cap: "∩", emptyset: "∅", varnothing: "∅", forall: "∀", exists: "∃", neg: "¬", land: "∧", lor: "∨", wedge: "∧",
+    vee: "∨", partial: "∂", nabla: "∇", perp: "⊥", parallel: "∥", angle: "∠", circ: "∘", ldots: "…", cdots: "⋯", dots: "…", prime: "′",
+    sum: "Σ", prod: "Π", int: "∫", iint: "∬", oint: "∮", lim: "lim", ln: "ln", log: "log", exp: "exp", sin: "sin", cos: "cos", tan: "tan",
+    max: "max", min: "min", det: "det", Pr: "Pr", mid: "∣", vert: "|", quad: "  ", qquad: "    ", ",": " ", ";": " ", ":": " ", "!": "",
+    "{": "{", "}": "}", "%": "%", "&": "&", _: "_", angln: "n⌉", degree: "°", Var: "Var", Cov: "Cov", E: "𝔼",
+  };
+  const BB = { R: "ℝ", N: "ℕ", Z: "ℤ", Q: "ℚ", C: "ℂ", E: "𝔼", P: "ℙ" };
+  const ACCENT = { ddot: "̈", dot: "̇", bar: "̄", hat: "̂", tilde: "̃", vec: "⃗", check: "̌" };
+  const script = (txt, map, mark) => {
+    const t = txt.trim();
+    if ([...t].every((ch) => map[ch] !== undefined)) return [...t].map((ch) => map[ch]).join("");
+    return `${mark}(${t})`;
+  };
+  function toUnicode(src) {
+    let s = String(src || "");
+    const arg = "\\{((?:[^{}]|\\{[^{}]*\\})*)\\}"; // un niveau d'accolades imbriquées
+    const R = (re) => new RegExp(re, "g");
+    for (let k = 0; k < 6; k++) {
+      const before = s;
+      s = s
+        .replace(R(`\\\\(?:operatorname|text|mathrm|mathbf|mathit|mathsf|textbf|textit|mbox|boldsymbol|mathcal)\\s*${arg}`), "$1")
+        .replace(R(`\\\\mathbb\\s*\\{?\\s*([A-Z])\\s*\\}?`), (_, L) => BB[L] || L)
+        .replace(R(`\\\\overline\\s*${arg}\\s*\\|`), "$1⌉")
+        .replace(R(`\\\\angl\\s*${arg}`), "$1⌉")
+        .replace(R(`\\\\(ddot|dot|bar|hat|tilde|vec|check)\\s*(?:${arg}|([A-Za-z]))`), (_, a, g, l) => (g ?? l) + ACCENT[a])
+        .replace(R(`\\\\overline\\s*${arg}`), (_, g) => [...g].map((ch) => ch + "̅").join(""))
+        .replace(R(`\\\\[dt]?frac\\s*${arg}\\s*${arg}`), (_, a, b) => {
+          // une seule « unité » (lettre, nombre, commande, avec indices/exposants) → pas de parenthèses
+          const unit = /^(?:[\p{L}\d]|\\[a-zA-Z]+|\d+(?:[.,]\d+)?)(?:\s*[_^]\s*(?:\{[^{}]*\}|\w))*$/u;
+          const wrap = (x) => (unit.test(x.trim()) ? x.trim() : `(${x.trim()})`);
+          return `${wrap(a)}/${wrap(b)}`;
+        })
+        .replace(R(`\\\\binom\\s*${arg}\\s*${arg}`), "C($1, $2)")
+        .replace(R(`\\\\sqrt\\s*\\[([^\\]]+)\\]\\s*${arg}`), (_, n, x) => `${script(n, SUP, "^")}√(${x})`)
+        .replace(R(`\\\\sqrt\\s*${arg}`), (_, x) => (/^(?:[\p{L}\d]|\\[a-zA-Z]+)$/u.test(x.trim()) ? `√${x.trim()}` : `√(${x})`))
+        .replace(R(`\\\\prescript\\s*${arg}\\s*${arg}\\s*${arg}`), (_, sup, sub, base) => `${sup ? script(sup, SUP, "^") : ""}${script(sub, SUB, "_")}${base}`);
+      if (s === before) break;
+    }
+    s = s
+      .replace(/\\(begin|end)\s*\{[^}]*\}(\{[^}]*\})?/g, "")
+      .replace(/\\\\/g, " ; ")
+      .replace(/&/g, " ")
+      .replace(/\\(left|right|big|Big|bigg|Bigg|displaystyle|textstyle|limits|nolimits)\b\s*/g, "")
+      .replace(/\{\}\s*_\s*(?:\{([^{}]*)\}|(\w))/g, (_, g, l) => script(g ?? l, SUB, "_")) // {}_t p_x → ₜpₓ
+      .replace(/\^\s*(?:\{([^{}]*)\}|(\\?\w+|.))/g, (_, g, l) => script((g ?? l).replace(/\\prime/g, "′"), SUP, "^"))
+      .replace(/_\s*(?:\{([^{}]*)\}|(\w|.))/g, (_, g, l) => script(g ?? l, SUB, "_"))
+      .replace(/\\([a-zA-Z]+|.)/g, (m, name) => UNI[name] ?? name)
+      .replace(/[{}]/g, "")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+    return s;
+  }
+  /** Texte avec $…$ → texte simple où les formules sont en Unicode. */
+  const textToUnicode = (text) => {
+    let out = "";
+    forEachMath(String(text ?? ""), (t) => (out += t), (src) => (out += toUnicode(src)));
+    return out;
+  };
+
+  window.MathText = { renderInline, renderMarkdown, toSpeech, speakTex, speakRendered, hasMath, MATH_RE, toUnicode, textToUnicode };
 })();

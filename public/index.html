@@ -126,6 +126,20 @@
               <button class="btn primary" data-studio="podcast">Générer</button>
             </div>
           </div>
+          <div class="podcast-card slides-card">
+            <div>
+              <h3>Présentation (PowerPoint)</h3>
+              <p class="small">Diapositives et notes de l'orateur pour votre exposé : à modifier, projeter, répéter à voix haute, puis télécharger en PowerPoint ou PDF.</p>
+            </div>
+            <div class="row">
+              <select id="slidesLength" aria-label="Nombre de diapositives">
+                <option value="court">Courte · 6 diapos</option>
+                <option value="moyen" selected>Moyenne · 10 diapos</option>
+                <option value="long">Longue · 15 diapos</option>
+              </select>
+              <button class="btn primary" data-studio="slides">Générer</button>
+            </div>
+          </div>
           <div class="studio-grid">
             <button class="tool" data-studio="summary"><b>Résumé</b><span>L'essentiel, structuré</span></button>
             <button class="tool" data-studio="keypoints"><b>Points clés</b><span>Les idées à retenir</span></button>
@@ -140,7 +154,7 @@
           </div>
           <details class="focus-box">
             <summary>Personnaliser (facultatif)</summary>
-            <textarea id="studioFocus" rows="2" placeholder="Ex. : insister sur le chapitre 3, niveau lycée, préparer un examen…"></textarea>
+            <textarea id="studioFocus" rows="2" placeholder="Ex. : insister sur le chapitre 3, niveau lycée, exposé de 10 minutes pour la classe…"></textarea>
           </details>
           <div id="studioStatus"></div>
         </div>
@@ -282,6 +296,7 @@
   <script src="/vendor/purify.js"></script>
   <script src="/vendor/katex/katex.min.js"></script>
   <script src="math.js"></script>
+  <script src="slides.js"></script>
   <script src="extract.js"></script>
   <script src="narrator.js"></script>
   <script src="app.js"></script>
