@@ -176,7 +176,9 @@ export const STUDIO = {
     label: "Présentation",
     effort: "medium",
     schema: (() => {
-      const icon = { type: "string", enum: ICON_NAMES };
+      // Icône = simple texte (une énumération de 116 noms rend le schéma trop
+      // complexe pour Gemini) ; la liste autorisée est donnée dans la consigne.
+      const icon = str;
       return obj({
         title: str,
         subtitle: str,
@@ -211,6 +213,8 @@ Ensemble :
 - \`slides\` (la diapositive de titre est ajoutée automatiquement) : 1re = « plan » (problématique + parties), dernière = « conclusion ».
 
 Contenu : précis et factuel, tiré des documents — dates, articles de loi, chiffres, exemples concrets, définitions. Textes courts (1 à 2 lignes par élément), vocabulaire juste. N'invente rien : sans données, choisis une autre mise en page. Varie les mises en page, une idée par diapositive.
+
+Icônes (\`icon\`) : uniquement un de ces noms exacts — ${ICON_NAMES.join(", ")}.
 
 Chaque diapositive : \`title\` (titre informatif, ex. « La formation du contrat : de la proposition à la garantie »), \`icon\`, \`notes\` (ce que l'orateur dit, 2 à 4 phrases). Champs non utilisés : "" ou [] (table : headers [] et rows [] ; alert : title "" et text ""). Mises en page (\`layout\`) et champs à remplir :
 - « plan » : \`kicker\` = « Problématique », \`lead\` = la question centrale ; \`items\` = 3 à 4 parties (\`label\` = « I », « II »…, \`title\` = nom de la partie, \`text\` = ce qu'elle couvre).
@@ -248,7 +252,9 @@ export async function studio(docs, kind, { focus = "", length = "moyen", languag
       : await impl().generate({ docs, instruction, schema: tool.schema, effort: tool.effort || "medium", system: SYSTEM_BASE, onProgress });
   if (!tool.schema) return { format: "markdown", content: text };
   try {
-    return { format: "json", content: JSON.parse(text) };
+    let t = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+    if (!t.startsWith("{")) t = t.slice(t.indexOf("{"), t.lastIndexOf("}") + 1);
+    return { format: "json", content: JSON.parse(t) };
   } catch {
     throw Object.assign(new Error("La réponse de l'IA était incomplète. Réessayez."), { status: 502 });
   }

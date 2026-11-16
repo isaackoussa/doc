@@ -51,6 +51,9 @@ async function saveBlocked(b) {
 }
 
 let noThinking = false;
+// Si Google refuse le schéma (trop complexe pour son vérificateur), on demande
+// simplement du JSON : la consigne décrit déjà le format, et l'app tolère les écarts.
+let noSchema = false;
 
 /**
  * Génère la présentation (JSON) en essayant les seaux un par un.
@@ -68,9 +71,10 @@ export async function generate({ docs, instruction, schema, system, onProgress }
   let quotaHits = 0;
 
   for (const b of order) {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const config = { systemInstruction: system, responseMimeType: "application/json", responseJsonSchema: schema };
-      if (!noThinking && attempt === 0) config.thinkingConfig = { thinkingBudget: 1024 };
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const config = { systemInstruction: system, responseMimeType: "application/json" };
+      if (!noSchema) config.responseJsonSchema = schema;
+      if (!noThinking) config.thinkingConfig = { thinkingBudget: 1024 };
       let full = "";
       try {
         onProgress?.("");
@@ -91,8 +95,13 @@ export async function generate({ docs, instruction, schema, system, onProgress }
         lastErr = e;
         const status = e instanceof ApiError ? e.status : e.status;
         // Le modèle ne connaît pas le réglage de réflexion : on réessaie sans.
-        if (status === 400 && /thinking/i.test(e.message) && attempt === 0) {
+        if (status === 400 && /thinking/i.test(e.message) && !noThinking) {
           noThinking = true;
+          continue;
+        }
+        if (status === 400 && /schema|constraint|branching|response_?json/i.test(e.message) && !noSchema) {
+          console.warn("Schéma refusé par Gemini, nouvelle demande en JSON libre :", e.message.slice(0, 160));
+          noSchema = true;
           continue;
         }
         if (status === 429) {
