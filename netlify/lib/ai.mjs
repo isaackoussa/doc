@@ -189,7 +189,7 @@ export const STUDIO = {
     prompt: `Crée une présentation (diaporama, type PowerPoint) pour un exposé oral à partir des documents.
 - \`title\` : titre de l'exposé ; \`subtitle\` : sous-titre court (contexte, public ou question traitée).
 - \`slides\` (la diapositive de titre est ajoutée automatiquement, ne la mets pas) : commence par une diapositive « Plan » ou « Introduction », termine par « Conclusion » (ou « À retenir »).
-- Pour chaque diapositive : \`title\` court (2 à 7 mots) ; \`bullets\` = 3 à 5 puces courtes (12 mots maximum chacune, pas de phrases longues, pas de numérotation) ; \`notes\` = ce que l'orateur dit pendant cette diapositive, à l'oral, 3 à 6 phrases naturelles qui développent les puces.
+- Pour chaque diapositive : \`title\` court (2 à 7 mots) ; \`bullets\` = 3 ou 4 puces courtes (12 mots maximum chacune, pas de phrases longues, pas de numérotation) ; \`notes\` = ce que l'orateur dit pendant cette diapositive, à l'oral, 2 à 4 phrases naturelles qui développent les puces.
 - \`layout\` : « puces » (cas général) ; « section » pour annoncer une grande partie (\`bullets\` = 0 ou 1 phrase d'accroche) ; « formule » quand une formule clé est au centre de la diapositive ; « citation » pour une phrase forte ou une définition (la mettre comme unique puce).
 - \`formula\` : pour « formule », la formule en LaTeX SANS les $ (ex. \\Delta = b^2 - 4ac) ; sinon une chaîne vide. Dans les puces et les notes, les formules s'écrivent en LaTeX entre $…$.
 - Progression logique, une idée par diapositive, vocabulaire adapté au public, aucune information inventée.`,
@@ -197,7 +197,7 @@ export const STUDIO = {
   },
 };
 
-export async function studio(docs, kind, { focus = "", length = "moyen", language = "" } = {}) {
+export async function studio(docs, kind, { focus = "", length = "moyen", language = "", onProgress } = {}) {
   const tool = STUDIO[kind];
   if (!tool) throw Object.assign(new Error(`Outil inconnu : ${kind}`), { status: 400 });
   checkSize(docs);
@@ -207,7 +207,7 @@ export async function studio(docs, kind, { focus = "", length = "moyen", languag
   instruction += `\nLangue : ${language || "français"}.`;
   if (!tool.schema) instruction += "\nRéponds en Markdown.";
 
-  const text = await impl().generate({ docs, instruction, schema: tool.schema, effort: tool.effort || "medium", system: SYSTEM_BASE });
+  const text = await impl().generate({ docs, instruction, schema: tool.schema, effort: tool.effort || "medium", system: SYSTEM_BASE, onProgress });
   if (!tool.schema) return { format: "markdown", content: text };
   try {
     return { format: "json", content: JSON.parse(text) };

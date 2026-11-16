@@ -98,7 +98,7 @@ export async function chat(docs, history, onText, system) {
 }
 
 /** Génération ponctuelle (studio) ; `schema` optionnel → JSON. */
-export async function generate({ docs, instruction, schema, effort = "medium", system }) {
+export async function generate({ docs, instruction, schema, effort = "medium", system, onProgress }) {
   const params = {
     ...baseParams(effort),
     max_tokens: 64000,
@@ -106,7 +106,10 @@ export async function generate({ docs, instruction, schema, effort = "medium", s
     messages: [{ role: "user", content: [...documentBlocks(docs, { citations: false }), { type: "text", text: instruction }] }],
   };
   if (schema) params.output_config = { ...params.output_config, format: { type: "json_schema", schema } };
-  const msg = await getClient().beta.messages.stream(params).finalMessage();
+  const stream = getClient().beta.messages.stream(params);
+  let full = "";
+  stream.on("text", (t) => onProgress?.((full += t)));
+  const msg = await stream.finalMessage();
   assertNotRefused(msg);
   return textOf(msg);
 }

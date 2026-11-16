@@ -3,6 +3,7 @@
 // ([D1-P3]…), on demande au modèle de citer ces numéros, puis on les convertit
 // en citations cliquables (mêmes données que pour Claude).
 import { GoogleGenAI, ApiError } from "@google/genai";
+import { getStore } from "@netlify/blobs";
 
 // « gemini-flash-latest » suit automatiquement le dernier modèle Flash. S'il
 // n'existe pas pour la clé utilisée, on choisit tout seul le meilleur modèle
@@ -10,6 +11,28 @@ import { GoogleGenAI, ApiError } from "@google/genai";
 export const MODEL = process.env.GEMINI_MODEL || "gemini-flash-latest";
 let resolvedModel = null;
 const currentModel = () => resolvedModel || MODEL;
+
+// Le modèle trouvé automatiquement est mémorisé (Netlify Blobs) : les tâches
+// suivantes ne refont pas la recherche (gain de plusieurs secondes par tâche).
+let cacheLoaded = false;
+const cacheStore = () => getStore({ name: "app-config", consistency: "strong" });
+async function loadCachedModel() {
+  if (cacheLoaded) return;
+  cacheLoaded = true;
+  try {
+    const c = await cacheStore().get("gemini-model", { type: "json" });
+    if (c?.configured === MODEL && c.resolved) resolvedModel = c.resolved;
+  } catch {}
+}
+async function saveCachedModel(resolved) {
+  try {
+    await cacheStore().setJSON("gemini-model", { configured: MODEL, resolved, at: new Date().toISOString() });
+  } catch {}
+}
+
+// Réflexion plafonnée selon la tâche : beaucoup plus rapide, qualité suffisante.
+const THINKING = { low: 0, medium: 1024, high: 4096 };
+let thinkingUnsupported = false;
 export const configured = () => Boolean(process.env.GEMINI_API_KEY);
 
 let client = null;
@@ -70,10 +93,11 @@ async function pickModel() {
 
 /** Appelle Gemini ; si le modèle n'existe pas, en choisit un autre automatiquement (une fois). */
 async function call(fn, delays) {
+  await loadCachedModel();
   try {
     return await withRetry(() => fn(currentModel()), delays);
   } catch (e) {
-    if (e.status !== 404 || resolvedModel) throw e;
+    if (e.status !== 404) throw e;
     let pick = null;
     try {
       pick = await pickModel();
@@ -81,7 +105,23 @@ async function call(fn, delays) {
     if (!pick || pick === currentModel()) throw e;
     console.warn(`Modèle Gemini ${currentModel()} introuvable, utilisation de ${pick}`);
     resolvedModel = pick;
+    await saveCachedModel(pick);
     return withRetry(() => fn(currentModel()), delays);
+  }
+}
+
+/** Ajoute le plafond de réflexion ; si le modèle le refuse, on réessaie sans. */
+async function withThinking(effort, run) {
+  const budget = THINKING[effort];
+  if (budget === undefined || thinkingUnsupported) return run({});
+  try {
+    return await run({ thinkingConfig: { thinkingBudget: budget } });
+  } catch (e) {
+    if (e.status === 400 && /thinking/i.test(e.message)) {
+      thinkingUnsupported = true;
+      return run({});
+    }
+    throw e;
   }
 }
 
@@ -182,30 +222,49 @@ export async function chat(docs, history, onText, system) {
   return toBlocks(full, map);
 }
 
-export async function generate({ docs, instruction, schema, system }) {
+/** Génération (studio) en continu : onProgress(texte reçu jusqu'ici) permet d'afficher l'avancement. */
+export async function generate({ docs, instruction, schema, system, effort = "medium", onProgress }) {
   const sources = docs.map((d, i) => `<document id="D${i + 1}" titre="${d.title.replace(/"/g, "'")}">\n${d.text}\n</document>`).join("\n\n");
-  const config = { systemInstruction: system };
+  const base = { systemInstruction: system };
   if (schema) {
-    config.responseMimeType = "application/json";
-    config.responseJsonSchema = schema;
+    base.responseMimeType = "application/json";
+    base.responseJsonSchema = schema;
   }
-  const res = await call((model) =>
-    getClient().models.generateContent({
-      model,
-      contents: [{ role: "user", parts: [{ text: `Voici les documents :\n\n${sources}` }, { text: instruction }] }],
-      config,
-    }),
-  );
-  assertNotBlocked(res);
-  return res.text || "";
+  return withThinking(effort, (extra) => {
+    let full = "";
+    let last = null;
+    return call(async (model) => {
+      if (full) throw Object.assign(new Error("La génération a été interrompue. Réessayez."), { status: 502 });
+      const stream = await getClient().models.generateContentStream({
+        model,
+        contents: [{ role: "user", parts: [{ text: `Voici les documents :\n\n${sources}` }, { text: instruction }] }],
+        config: { ...base, ...extra },
+      });
+      for await (const chunk of stream) {
+        last = chunk;
+        const t = chunk.text;
+        if (t) {
+          full += t;
+          onProgress?.(full);
+        }
+      }
+      if (!full) assertNotBlocked(last);
+      if (last?.candidates?.[0]?.finishReason === "MAX_TOKENS")
+        throw Object.assign(new Error("La réponse était trop longue et a été coupée. Choisissez une version plus courte."), { status: 502 });
+      return full;
+    });
+  });
 }
 
 export async function transcribe(mediaType, data, prompt) {
-  const res = await call((model) =>
-    getClient().models.generateContent({
-      model,
-      contents: [{ role: "user", parts: [{ inlineData: { mimeType: mediaType, data } }, { text: prompt }] }],
-    }),
+  const res = await withThinking("low", (extra) =>
+    call((model) =>
+      getClient().models.generateContent({
+        model,
+        contents: [{ role: "user", parts: [{ inlineData: { mimeType: mediaType, data } }, { text: prompt }] }],
+        config: { ...extra },
+      }),
+    ),
   );
   assertNotBlocked(res);
   return res.text || "";

@@ -75,22 +75,42 @@
   addEventListener("pagehide", () => {
     if (!persistTimer || !state.user) return;
     clearTimeout(persistTimer);
-    fetch("/api/state", { method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify(snapshot()) });
+    const data = JSON.stringify(snapshot());
+    // Les navigateurs limitent ce dernier envoi à 64 Ko : au-delà, on garde l'envoi normal.
+    if (data.length < 60_000) fetch("/api/state", { method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" }, body: data });
+    else api("/api/state", { method: "PUT", body: snapshot() }).catch(() => {});
   });
 
   /** Lance une tâche longue (studio, lecture d'image) et attend son résultat. */
-  async function runJob(payload, { timeoutMin = 16 } = {}) {
+  async function runJob(payload, { timeoutMin = 16, onProgress } = {}) {
     const { id } = await api("/api/jobs", { method: "POST", body: payload });
-    const kick = await authFetch("/api/jobs-run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
-    if (!kick.ok && kick.status !== 202) throw new Error(`Impossible de lancer la tâche (${kick.status})`);
-    const deadline = Date.now() + timeoutMin * 60_000;
-    let wait = 1500;
+    const kick = () => authFetch("/api/jobs-run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+    const k = await kick();
+    if (!k.ok && k.status !== 202) throw new Error(`Impossible de lancer la tâche (${k.status})`);
+    const started = Date.now();
+    const deadline = started + timeoutMin * 60_000;
+    let wait = 1000, kicks = 1, failures = 0;
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, wait));
-      wait = Math.min(wait * 1.3, 5000);
-      const job = await api(`/api/jobs/${id}`);
+      wait = Math.min(wait * 1.25, 2500);
+      let job;
+      try {
+        job = await api(`/api/jobs/${id}`);
+        failures = 0;
+      } catch (e) {
+        if (++failures >= 5) throw e; // réseau coupé un instant : on réessaie
+        continue;
+      }
       if (job.status === "done") return job.result;
       if (job.status === "error") throw new Error(job.error || "La tâche a échoué");
+      const elapsed = Date.now() - started;
+      onProgress?.(job, elapsed);
+      // Tâche jamais démarrée (lancement perdu) : on la relance, puis on abandonne.
+      if (job.status === "pending" && elapsed > 20_000 * kicks && kicks < 3) (kicks++, kick().catch(() => {}));
+      if (job.status === "pending" && elapsed > 75_000) throw new Error("La tâche n'a pas pu démarrer. Réessayez dans un instant.");
+      // Tâche démarrée mais plus aucune nouvelle depuis 5 min : interrompue côté serveur.
+      if (job.status === "running" && job.updatedAt && job.now && Date.parse(job.now) - Date.parse(job.updatedAt) > 5 * 60_000)
+        throw new Error("La tâche a été interrompue. Réessayez (en version plus courte si besoin).");
     }
     throw new Error("La tâche prend trop de temps. Réessayez plus tard.");
   }
@@ -133,7 +153,13 @@
     $(".app").dataset.view = v;
     $$(".mobile-nav button").forEach((b) => b.classList.toggle("active", b.dataset.view === v));
   }
-  $$(".mobile-nav button").forEach((b) => b.addEventListener("click", () => setView(b.dataset.view)));
+  let userNavigated = false;
+  $$(".mobile-nav button").forEach((b) =>
+    b.addEventListener("click", () => {
+      userNavigated = true;
+      setView(b.dataset.view);
+    }),
+  );
 
   // ----------------------------------------------------------------- sources
   async function loadDocs() {
@@ -644,18 +670,31 @@
     const cache = state.cloud.overview;
     if (cache[key]) return drawOverview(cache[key]);
     box.innerHTML = `<div class="intro-card"><span class="spin"></span> Lecture des sources pour préparer une vue d'ensemble…</div>`;
+    // On attend que la sélection ne bouge plus (cocher plusieurs sources = une seule demande),
+    // et on ne relance jamais une vue d'ensemble déjà en cours : le quota gratuit est préservé.
+    await new Promise((r) => setTimeout(r, 1500));
+    if (selKey() !== key) return; // la sélection a changé : l'appel suivant s'en charge
+    if (!overviewInFlight.has(key)) {
+      const ids = [...state.selected];
+      const job = runJob({ type: "studio", kind: "overview", docIds: ids }).then((note) => {
+        const c = state.cloud.overview;
+        c[key] = note.content;
+        const keys = Object.keys(c);
+        if (keys.length > 20) delete c[keys[0]];
+        persist();
+        return note.content;
+      });
+      overviewInFlight.set(key, job);
+      job.finally(() => overviewInFlight.delete(key)).catch(() => {});
+    }
     try {
-      const note = await runJob({ type: "studio", kind: "overview", docIds: [...state.selected] });
-      const c = state.cloud.overview;
-      c[key] = note.content;
-      const keys = Object.keys(c);
-      if (keys.length > 20) delete c[keys[0]];
-      persist();
-      if (selKey() === key) drawOverview(note.content);
+      const content = await overviewInFlight.get(key);
+      if (selKey() === key) drawOverview(content);
     } catch (e) {
       if (selKey() === key) box.innerHTML = `<div class="intro-card muted">${esc(e.message)}</div>`;
     }
   }
+  const overviewInFlight = new Map(); // sélection → vue d'ensemble en cours de création
   function drawOverview(o) {
     const box = $("#chatIntro");
     box.innerHTML = `
@@ -859,14 +898,25 @@
     const label = state.config.studio[kind]?.label || kind;
     const job = document.createElement("div");
     job.className = "job";
-    job.innerHTML = `<span class="spin"></span> <span>${esc(label)} en préparation… <small class="muted">(peut prendre une minute)</small></span>`;
+    job.innerHTML = `<span class="spin"></span> <span>${esc(label)} en préparation… <small class="muted job-progress">démarrage…</small></span>`;
     $("#studioStatus").prepend(job);
     offerNotifications(job);
     const btns = $$(`[data-studio="${kind}"]`);
     btns.forEach((b) => (b.disabled = true));
     try {
       const length = kind === "slides" ? $("#slidesLength").value : $("#podcastLength").value;
-      const note = await runJob({ type: "studio", kind, docIds: [...state.selected], focus: $("#studioFocus").value, length });
+      const unit = { slides: "diapositive", podcast: "réplique", quiz: "question", flashcards: "fiche", mindmap: "idée" }[kind];
+      const onProgress = (j, elapsed) => {
+        const sec = Math.round(elapsed / 1000);
+        const time = sec < 60 ? `${sec} s` : `${Math.floor(sec / 60)} min ${String(sec % 60).padStart(2, "0")}`;
+        const p = j.progress;
+        let what = j.status === "pending" ? "démarrage…" : "l'IA lit vos documents…";
+        if (p?.done) what = p.total ? `${unit} ${Math.min(p.done, p.total)} / ${p.total}` : `${p.done} ${unit}${p.done > 1 ? "s" : ""}`;
+        else if (p?.words) what = `rédaction… ${p.words} mots`;
+        const el = $(".job-progress", job);
+        if (el) el.textContent = `${what} · ${time}`;
+      };
+      const note = await runJob({ type: "studio", kind, docIds: [...state.selected], focus: $("#studioFocus").value, length }, { onProgress });
       job.remove();
       taskDone(`${label} prêt(e)`, note.title, note.id, `/?note=${note.id}`);
       state.notes.unshift(note);
@@ -910,8 +960,11 @@
     setView("assist");
     $("#noteView").classList.remove("hidden");
     $("#noteTitle").textContent = state.config.studio[note.kind]?.label || note.title;
-    const body = $("#noteBody");
-    body.innerHTML = "";
+    // Zone neuve à chaque note : les écouteurs de la note précédente (fiches,
+    // podcast, présentation) ne doivent pas réagir aux clics de la suivante.
+    const old = $("#noteBody");
+    const body = old.cloneNode(false);
+    old.replaceWith(body);
     body.scrollTop = 0;
     const r = { quiz: renderQuiz, flashcards: renderCards, mindmap: renderMindmap, podcast: renderPodcast }[note.kind];
     if (note.kind === "slides" && note.format === "json") window.Slides.render(note, body, slidesCtx(note));
@@ -1237,7 +1290,7 @@
     $("#userEmail").textContent = state.user.email || "";
     $("#account").classList.remove("hidden");
     state.chat = saved.chat || [];
-    state.selected = new Set(saved.selected || []);
+    state.selected = new Set([...(saved.selected || []), ...state.selected]); // garde ce qui a été coché pendant le chargement
     state.cloud = { positions: saved.positions || {}, overview: saved.overview || {}, lastDoc: saved.lastDoc || null };
     hideAuth();
     if (Identity && !state.config.devUser) setInterval(() => Identity.refreshSession().catch(() => {}), 20 * 60_000);
@@ -1245,11 +1298,11 @@
     await loadDocs();
     renderChat();
     renderChatIntro();
-    await loadNotes();
     const last = state.cloud.lastDoc;
-    if (last && state.docs.some((d) => d.id === last)) openDoc(last);
-    setView("read");
+    if (last && !state.doc && state.docs.some((d) => d.id === last)) openDoc(last);
+    if (!userNavigated) setView("read");
     window.Notify.register();
+    await loadNotes();
     openFromUrl(location.href);
   })();
 

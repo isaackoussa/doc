@@ -16,14 +16,31 @@ export default async (req) => {
   const store = jobsStore();
   const job = await store.get(`job/${id}`, { type: "json" });
   if (!job || job.status !== "pending") return; // déjà traitée (ou inconnue)
+  let finished = false;
+  let progressWrite = Promise.resolve();
   job.status = "running";
+  job.startedAt = job.updatedAt = new Date().toISOString();
   await store.setJSON(`job/${id}`, job);
 
   try {
     if (job.type === "studio") {
       const { kind, docIds, focus, length } = job.params;
       const docs = await loadDocs(job.uid, docIds);
-      const result = await studio(docs, kind, { focus, length });
+      // Avancement (ex. « diapositive 4 / 10 ») enregistré au plus toutes les 2 s.
+      const COUNTERS = { slides: /"layout"\s*:/g, podcast: /"speaker"\s*:/g, quiz: /"question"\s*:/g, flashcards: /"front"\s*:/g, mindmap: /"label"\s*:/g };
+      const TOTALS = { slides: { court: 6, moyen: 10, long: 15 }[length] || 10, podcast: { court: 12, moyen: 24, long: 40 }[length] || 24, quiz: 10 };
+      let lastSave = 0;
+      const onProgress = (text) => {
+        const now = Date.now();
+        if (finished || now - lastSave < 2000) return;
+        lastSave = now;
+        const re = COUNTERS[kind];
+        job.progress = re ? { done: (text.match(re) || []).length, total: TOTALS[kind] || null } : { words: text.split(/\s+/).length };
+        job.updatedAt = new Date(now).toISOString();
+        const snapshot = { ...job };
+        progressWrite = progressWrite.then(() => store.setJSON(`job/${id}`, snapshot)).catch(() => {}); // écritures dans l'ordre
+      };
+      const result = await studio(docs, kind, { focus, length, onProgress });
       const note = {
         id: randomUUID(),
         kind,
@@ -45,7 +62,11 @@ export default async (req) => {
     job.status = "error";
     job.error = humanError(e);
   }
+  // L'état final ne doit jamais être écrasé par un avancement encore en route.
+  finished = true;
+  await progressWrite;
   job.finishedAt = new Date().toISOString();
+  delete job.progress;
   await store.setJSON(`job/${id}`, job);
 
   // Prévenir l'utilisateur (même app fermée) pour les créations du studio.

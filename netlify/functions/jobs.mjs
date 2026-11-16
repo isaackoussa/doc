@@ -15,7 +15,7 @@ export default handle(async (req, context) => {
     const job = await store.get(`job/${checkId(context.params.id)}`, { type: "json" });
     if (!job || job.uid !== user.id) throw new HttpError(404, "Tâche introuvable");
     const { uid, ...pub } = job;
-    return json(pub);
+    return json({ ...pub, now: new Date().toISOString() }); // heure du serveur : pas de décalage d'horloge
   }
 
   if (req.method === "POST" && !context.params.id) {
