@@ -22,18 +22,41 @@ function client(key) {
   return clients.get(key);
 }
 
-/** Les « seaux » de quota disponibles, dans l'ordre d'essai. */
-export function buckets() {
-  const dedicated = process.env.GEMINI_SLIDES_API_KEY;
-  const keys = [...new Set([dedicated, process.env.GEMINI_API_KEY].filter(Boolean))];
+/** Vraie clé dédiée : présente ET différente de la clé principale. */
+const hasDedicatedKey = () => Boolean(process.env.GEMINI_SLIDES_API_KEY) && process.env.GEMINI_SLIDES_API_KEY !== process.env.GEMINI_API_KEY;
+
+/**
+ * Les « seaux » de quota, dans l'ordre d'essai. `mainModel` = modèle utilisé par le
+ * reste de l'app (discussion, quiz…) : sur la clé principale, on le met en DERNIER,
+ * pour que les présentations consomment d'abord le quota d'autres modèles.
+ */
+export function buckets(mainModel = null) {
+  const dedicated = hasDedicatedKey() ? process.env.GEMINI_SLIDES_API_KEY : null;
+  const main = process.env.GEMINI_API_KEY;
+  const keys = [...new Set([dedicated, main].filter(Boolean))];
   const models = (process.env.SLIDES_MODELS || "").split(",").map((m) => m.trim()).filter(Boolean);
   const list = models.length ? models : DEFAULT_MODELS;
-  return keys.flatMap((key) =>
-    list.map((model) => ({ key, model, id: `${key.slice(-6)}:${model}`, dedicated: key === dedicated })),
-  );
+  return keys.flatMap((key) => {
+    const ordered = key === main && mainModel ? [...list.filter((m) => m !== mainModel), ...list.filter((m) => m === mainModel)] : list;
+    return ordered.map((model) => ({ key, model, id: `${key.slice(-6)}:${model}`, dedicated: key === dedicated }));
+  });
 }
 export const configured = () => buckets().length > 0;
-export const info = () => ({ dedicatedKey: Boolean(process.env.GEMINI_SLIDES_API_KEY), buckets: buckets().length });
+export const info = () => ({
+  dedicatedKey: hasDedicatedKey(),
+  sameKeyAsMain: Boolean(process.env.GEMINI_SLIDES_API_KEY) && !hasDedicatedKey(),
+  buckets: buckets().length,
+});
+
+/** Modèle réellement utilisé par le reste de l'app (mémorisé par le fournisseur Gemini). */
+async function mainAppModel() {
+  const configured = process.env.GEMINI_MODEL || "gemini-flash-latest";
+  try {
+    const c = await store().get("gemini-model", { type: "json" });
+    if (c?.configured === configured && c.resolved) return c.resolved;
+  } catch {}
+  return configured;
+}
 
 // Seaux momentanément épuisés (mémorisés entre deux tâches).
 const store = () => getStore({ name: "app-config", consistency: "strong" });
@@ -64,7 +87,7 @@ export async function generate({ docs, instruction, schema, system, onProgress }
   const contents = [{ role: "user", parts: [{ text: `Voici les documents :\n\n${sources}` }, { text: instruction }] }];
   const blocked = await loadBlocked();
   const now = Date.now();
-  const all = buckets();
+  const all = buckets(await mainAppModel());
   // Les seaux bloqués récemment passent en dernier (ils peuvent avoir été libérés).
   const order = [...all.filter((b) => !(blocked[b.id] > now)), ...all.filter((b) => blocked[b.id] > now)];
   let lastErr = null;
