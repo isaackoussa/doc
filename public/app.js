@@ -253,6 +253,7 @@
     await loadDocs();
     renderChatIntro();
     toast(`Ajouté : ${added.map((d) => d.title).join(", ")}`, "ok");
+    taskDone("Document prêt", added.map((d) => d.title).join(", "), "import-" + added[0].id, "/");
     openDoc(added[0].id);
     setView("read");
   }
@@ -858,14 +859,16 @@
     const label = state.config.studio[kind]?.label || kind;
     const job = document.createElement("div");
     job.className = "job";
-    job.innerHTML = `<span class="spin"></span> ${esc(label)} en préparation… <small class="muted">(peut prendre une minute)</small>`;
+    job.innerHTML = `<span class="spin"></span> <span>${esc(label)} en préparation… <small class="muted">(peut prendre une minute)</small></span>`;
     $("#studioStatus").prepend(job);
+    offerNotifications(job);
     const btns = $$(`[data-studio="${kind}"]`);
     btns.forEach((b) => (b.disabled = true));
     try {
       const length = kind === "slides" ? $("#slidesLength").value : $("#podcastLength").value;
       const note = await runJob({ type: "studio", kind, docIds: [...state.selected], focus: $("#studioFocus").value, length });
       job.remove();
+      taskDone(`${label} prêt(e)`, note.title, note.id, `/?note=${note.id}`);
       state.notes.unshift(note);
       updateNotesCount();
       openNote(note);
@@ -1242,9 +1245,97 @@
     await loadDocs();
     renderChat();
     renderChatIntro();
-    loadNotes();
+    await loadNotes();
     const last = state.cloud.lastDoc;
     if (last && state.docs.some((d) => d.id === last)) openDoc(last);
     setView("read");
+    window.Notify.register();
+    openFromUrl(location.href);
   })();
+
+  // ------------------------------------------------------------ notifications
+  let notifState = "off";
+  /** Une tâche est terminée : titre de l'onglet + notification si l'app est en arrière-plan. */
+  function taskDone(title, body, tag, url) {
+    if (!document.hidden) return;
+    window.Notify.flagTitle(title);
+    // Les résultats du studio sont aussi annoncés par le serveur (même tag : pas de doublon).
+    window.Notify.local({ title: `✓ ${title}`, body, tag, url }).catch(() => {});
+  }
+  /** Ouvre la note indiquée dans un lien de notification (/?note=…). */
+  function openFromUrl(href) {
+    const id = new URL(href, location.origin).searchParams.get("note");
+    if (!id) return;
+    history.replaceState(null, "", location.pathname);
+    const show = () => {
+      const n = state.notes.find((x) => x.id === id);
+      if (!n) return false;
+      showTab("notes");
+      openNote(n);
+      return true;
+    };
+    if (!show()) loadNotes().then(show);
+  }
+  navigator.serviceWorker?.addEventListener("message", (e) => {
+    if (e.data?.type === "lumen-open") openFromUrl(e.data.url);
+  });
+
+  async function refreshNotifUI() {
+    try {
+      notifState = await window.Notify.status(authFetch);
+    } catch {
+      notifState = "off";
+    }
+    const txt = {
+      on: "Activées sur cet appareil : vous serez prévenu(e) quand une tâche du studio est terminée, même si l'app est fermée.",
+      off: "Être prévenu(e) quand un podcast, une présentation, un quiz… est prêt, même si l'app est fermée.",
+      denied: "Bloquées par le navigateur. Autorisez les notifications pour ce site dans les réglages du navigateur, puis revenez ici.",
+      "ios-install": "Sur iPhone : touchez Partager puis « Sur l'écran d'accueil », ouvrez Lumen depuis l'icône, puis activez les notifications ici.",
+      unsupported: "Ce navigateur ne gère pas les notifications.",
+    }[notifState];
+    $("#notifStatus").textContent = txt;
+    $("#notifToggle").textContent = notifState === "on" ? "Désactiver" : "Activer les notifications";
+    $("#notifToggle").classList.toggle("hidden", !["on", "off"].includes(notifState));
+    $("#notifTest").classList.toggle("hidden", notifState !== "on");
+  }
+  async function enableNotifications() {
+    try {
+      notifState = await window.Notify.enable(authFetch);
+      toast("Notifications activées ✓", "ok");
+    } catch (e) {
+      toast(e.message, "error");
+    }
+    refreshNotifUI();
+    return notifState === "on";
+  }
+  $("#notifToggle").addEventListener("click", async () => {
+    if (notifState === "on") {
+      await window.Notify.disable(authFetch);
+      toast("Notifications désactivées sur cet appareil", "ok");
+      refreshNotifUI();
+    } else enableNotifications();
+  });
+  $("#notifTest").addEventListener("click", async () => {
+    try {
+      const n = await window.Notify.test(authFetch);
+      toast(n ? "Notification de test envoyée" : "Aucun appareil abonné", n ? "ok" : "error");
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  });
+  $("#settingsBtn").addEventListener("click", refreshNotifUI);
+  $("#pVoice").addEventListener("click", refreshNotifUI);
+  /** Pendant une tâche du studio : proposer « Me prévenir » si les notifications ne sont pas activées. */
+  async function offerNotifications(jobEl) {
+    if (!window.Notify.supported() || Notification.permission === "denied") return;
+    if (notifState !== "on") notifState = await window.Notify.status(authFetch).catch(() => "off");
+    if (notifState !== "off" || !jobEl.isConnected) return;
+    const b = document.createElement("button");
+    b.className = "link notif-offer";
+    b.textContent = "🔔 Me prévenir quand c'est prêt";
+    b.addEventListener("click", async () => {
+      if (await enableNotifications()) b.replaceWith(Object.assign(document.createElement("small"), { className: "muted", textContent: "🔔 Vous serez prévenu(e)" }));
+    });
+    jobEl.append(b);
+  }
 })();

@@ -6,6 +6,12 @@
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
+# Le service worker doit toujours être à jour (jamais servi depuis le cache).
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
 [dev]
   # « netlify dev » : sert public/ et les fonctions sur http://localhost:8888
   publish = "public"

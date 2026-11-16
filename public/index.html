@@ -238,7 +238,16 @@
   <!-- ============ RÉGLAGES ============ -->
   <dialog id="settingsDlg" class="dlg">
     <form method="dialog">
-      <header><h3>Voix &amp; lecture</h3><button class="icon-btn" value="close" aria-label="Fermer">✕</button></header>
+      <header><h3>Réglages</h3><button class="icon-btn" value="close" aria-label="Fermer">✕</button></header>
+      <div class="field notif-field">
+        <span>🔔 Notifications</span>
+        <small class="muted" id="notifStatus">Être prévenu(e) quand un podcast, une présentation, un quiz… est prêt, même si l'app est fermée.</small>
+        <div class="row">
+          <button type="button" class="btn" id="notifToggle">Activer les notifications</button>
+          <button type="button" class="btn hidden" id="notifTest">Envoyer un test</button>
+        </div>
+      </div>
+      <h4 class="dlg-section">Voix &amp; lecture</h4>
       <label class="field">
         <span>Moteur de voix</span>
         <select id="engineSel"></select>
@@ -304,6 +313,7 @@
   <script src="/vendor/katex/katex.min.js"></script>
   <script src="math.js"></script>
   <script src="slides.js"></script>
+  <script src="notify.js"></script>
   <script src="extract.js"></script>
   <script src="narrator.js"></script>
   <script src="app.js"></script>

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { studio, transcribe, STUDIO } from "../lib/ai.mjs";
 import { humanError, isId } from "../lib/http.mjs";
 import { jobsStore, loadDocs, saveNote } from "../lib/storage.mjs";
+import { notifyUser, READY } from "../lib/push.mjs";
 
 export default async (req) => {
   let id;
@@ -46,6 +47,17 @@ export default async (req) => {
   }
   job.finishedAt = new Date().toISOString();
   await store.setJSON(`job/${id}`, job);
+
+  // Prévenir l'utilisateur (même app fermée) pour les créations du studio.
+  if (job.type === "studio" && job.params.kind !== "overview") {
+    const kind = job.params.kind;
+    await notifyUser(
+      job.uid,
+      job.status === "done"
+        ? { title: `✓ ${READY[kind] || "C'est prêt"}`, body: job.result.title, tag: job.id, url: `/?note=${job.result.id}` }
+        : { title: `La création « ${STUDIO[kind]?.label || kind} » a échoué`, body: job.error || "Réessayez.", tag: job.id, url: "/" },
+    );
+  }
 };
 
 export const config = { path: "/api/jobs-run", background: true };

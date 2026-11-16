@@ -16,6 +16,7 @@ Lumen lit vos documents à voix haute et vous aide à les comprendre.
   - **Podcast audio** : deux voix (Léa et Hugo) discutent de vos documents pour vous les expliquer. Téléchargeable (WAV) avec les voix Piper.
   - Tout ce que vous générez est rangé dans **Notes**.
 - **Formules mathématiques** bien écrites partout (KaTeX) : dans les documents, les réponses, le quiz, les fiches et la carte mentale. La voix les lit en mots (« x au carré », « racine carrée de… »). Pour un PDF de maths, cochez « Document avec des formules » avant l'import : l'IA relit chaque page et réécrit les formules proprement.
+- **Notifications** : prévenu(e) quand un podcast, une présentation, un quiz… est prêt, même si l'app est fermée (⚙️ Réglages → Activer les notifications ; sur iPhone, ajoutez d'abord Lumen à l'écran d'accueil). Rien à configurer : les clés sont créées automatiquement.
 - Fonctionne sur ordinateur et sur téléphone.
 
 ## 100 % gratuit

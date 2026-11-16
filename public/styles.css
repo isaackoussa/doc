@@ -479,3 +479,10 @@ input[type="range"] { accent-color: var(--accent); width: 100%; }
 img.logo { width: 32px; height: 32px; border-radius: 9px; background: none; display: block; }
 img.hero-mark { display: block; width: 76px; height: 76px; background: none; padding: 0; border-radius: 18px; }
 img.hero-mark.small { width: 52px; height: 52px; border-radius: 14px; }
+
+/* ---------- notifications ---------- */
+.notif-field { background: var(--panel-2); border-radius: 12px; padding: 12px; }
+.notif-field .row { margin-top: 6px; }
+.dlg-section { margin: 4px 0 -4px; font-size: 15px; }
+.job { flex-wrap: wrap; }
+.notif-offer { font-size: 13px; margin-left: auto; }
