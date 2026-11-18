@@ -6,7 +6,7 @@ import { loadDocs } from "../lib/storage.mjs";
 
 export default handle(async (req) => {
   const user = await requireUser();
-  if (!aiEnabled()) throw new HttpError(503, "L'IA n'est pas configurée : ajoutez GEMINI_API_KEY (gratuit).");
+  if (!aiEnabled()) throw new HttpError(503, "L'IA n'est pas configurée : ajoutez une clé GEMINI_API_KEY (gratuite).");
   const b = await body(req);
   const docs = await loadDocs(user.id, b.docIds);
   const history = (b.messages || [])

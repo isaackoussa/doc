@@ -19,7 +19,7 @@ export const aiEnabled = () => provider() !== null;
 export const modelName = () => (provider() ? PROVIDERS[provider()].MODEL : null);
 function impl() {
   const p = provider();
-  if (!p) throw Object.assign(new Error("L'IA n'est pas configurée : ajoutez GEMINI_API_KEY (gratuit)."), { status: 503 });
+  if (!p) throw Object.assign(new Error("L'IA n'est pas configurée : ajoutez une clé GEMINI_API_KEY (gratuite)."), { status: 503 });
   return PROVIDERS[p];
 }
 

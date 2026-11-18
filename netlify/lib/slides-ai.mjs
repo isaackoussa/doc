@@ -2,49 +2,49 @@
 //
 // Chez Google, le quota gratuit est compté PAR MODÈLE et PAR PROJET (clé). Les
 // présentations passent donc par leur propre chaîne « clé × modèle » :
-//   1. la clé GEMINI_SLIDES_API_KEY (facultative, idéalement d'un autre compte/projet Google),
-//   2. puis la clé principale GEMINI_API_KEY,
+//   1. la ou les clés GEMINI_SLIDES_API_KEY (facultatives, idéalement d'autres comptes Google),
+//   2. puis toutes les clés générales (GEMINI_API_KEY et GEMINI_API_KEYS),
 // et, pour chaque clé, plusieurs modèles (chacun a son propre quota). Quand un quota
 // est épuisé (429), on passe immédiatement au suivant au lieu d'attendre, et on s'en
 // souvient quelques minutes pour ne pas le réessayer inutilement.
-import { GoogleGenAI, ApiError } from "@google/genai";
+import { ApiError } from "@google/genai";
 import { getStore } from "@netlify/blobs";
+import { allKeys, keyId, clientFor as client } from "./keys.mjs";
 
 const DEFAULT_MODELS = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest", "gemini-2.5-flash-lite", "gemini-2.0-flash"];
 
-const clients = new Map();
-function client(key) {
-  if (!clients.has(key)) {
-    const httpOptions = { apiVersion: "v1beta" };
-    if (process.env.GEMINI_BASE_URL) httpOptions.baseUrl = process.env.GEMINI_BASE_URL;
-    clients.set(key, new GoogleGenAI({ apiKey: key, httpOptions }));
-  }
-  return clients.get(key);
-}
-
-/** Vraie clé dédiée : présente ET différente de la clé principale. */
-const hasDedicatedKey = () => Boolean(process.env.GEMINI_SLIDES_API_KEY) && process.env.GEMINI_SLIDES_API_KEY !== process.env.GEMINI_API_KEY;
+const split = (v) => (v || "").split(/[\s,;]+/).map((k) => k.trim()).filter(Boolean);
+const generalKeys = () => allKeys().map((k) => k.key);
+/** Clés réservées aux présentations, différentes des clés générales. */
+const dedicatedKeys = () => split(process.env.GEMINI_SLIDES_API_KEY).filter((k) => !generalKeys().includes(k));
+const hasDedicatedKey = () => dedicatedKeys().length > 0;
 
 /**
  * Les « seaux » de quota, dans l'ordre d'essai. `mainModel` = modèle utilisé par le
- * reste de l'app (discussion, quiz…) : sur la clé principale, on le met en DERNIER,
+ * reste de l'app (discussion, quiz…) : sur les clés générales, on le met en DERNIER,
  * pour que les présentations consomment d'abord le quota d'autres modèles.
  */
 export function buckets(mainModel = null) {
-  const dedicated = hasDedicatedKey() ? process.env.GEMINI_SLIDES_API_KEY : null;
-  const main = process.env.GEMINI_API_KEY;
-  const keys = [...new Set([dedicated, main].filter(Boolean))];
+  const dedicated = dedicatedKeys();
+  const keys = [...new Set([...dedicated, ...generalKeys()])];
   const models = (process.env.SLIDES_MODELS || "").split(",").map((m) => m.trim()).filter(Boolean);
   const list = models.length ? models : DEFAULT_MODELS;
-  return keys.flatMap((key) => {
-    const ordered = key === main && mainModel ? [...list.filter((m) => m !== mainModel), ...list.filter((m) => m === mainModel)] : list;
-    return ordered.map((model) => ({ key, model, id: `${key.slice(-6)}:${model}`, dedicated: key === dedicated }));
+  const shared = mainModel ? [...list.filter((m) => m !== mainModel), ...list.filter((m) => m === mainModel)] : list;
+  // Ordre : chaque modèle « frais » sur toutes les clés, avant le modèle partagé.
+  const out = [];
+  const ded = new Set(dedicated);
+  for (const key of keys.filter((k) => ded.has(k))) for (const model of list) out.push({ key, model });
+  shared.forEach((model) => {
+    for (const key of keys.filter((k) => !ded.has(k))) out.push({ key, model });
   });
+  return out.map((b) => ({ ...b, id: `${keyId(b.key)}:${b.model}`, dedicated: ded.has(b.key) }));
 }
 export const configured = () => buckets().length > 0;
 export const info = () => ({
   dedicatedKey: hasDedicatedKey(),
+  dedicatedKeys: dedicatedKeys().length,
   sameKeyAsMain: Boolean(process.env.GEMINI_SLIDES_API_KEY) && !hasDedicatedKey(),
+  keys: dedicatedKeys().length + generalKeys().length,
   buckets: buckets().length,
 });
 
@@ -145,7 +145,7 @@ export async function generate({ docs, instruction, schema, system, onProgress }
   if (quotaHits)
     throw Object.assign(
       new Error(
-        "Toutes les IA gratuites disponibles pour les présentations ont atteint leur limite. Réessayez dans quelques minutes, ou ajoutez une clé GEMINI_SLIDES_API_KEY d'un autre compte Google pour doubler le quota.",
+        "Toutes les IA gratuites disponibles pour les présentations ont atteint leur limite. Réessayez dans quelques minutes, ou ajoutez des clés d'autres comptes Google (GEMINI_API_KEYS ou GEMINI_SLIDES_API_KEY) pour augmenter le quota.",
       ),
       { status: 429 },
     );

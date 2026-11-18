@@ -4,6 +4,7 @@
 // en citations cliquables (mêmes données que pour Claude).
 import { GoogleGenAI, ApiError } from "@google/genai";
 import { getStore } from "@netlify/blobs";
+import * as Keys from "../keys.mjs";
 
 // « gemini-flash-latest » suit automatiquement le dernier modèle Flash. S'il
 // n'existe pas pour la clé utilisée, on choisit tout seul le meilleur modèle
@@ -33,53 +34,36 @@ async function saveCachedModel(resolved) {
 // Réflexion plafonnée selon la tâche : beaucoup plus rapide, qualité suffisante.
 const THINKING = { low: 0, medium: 1024, high: 4096 };
 let thinkingUnsupported = false;
-export const configured = () => Boolean(process.env.GEMINI_API_KEY);
+export const configured = () => Keys.count() > 0;
 
-let client = null;
-function getClient() {
-  if (!client) {
-    // v1beta : version de l'API où sont disponibles les alias « -latest »,
-    // les instructions système et les réponses JSON structurées.
-    const opts = { apiKey: process.env.GEMINI_API_KEY, httpOptions: { apiVersion: "v1beta" } };
-    if (process.env.GEMINI_BASE_URL) opts.httpOptions.baseUrl = process.env.GEMINI_BASE_URL;
-    client = new GoogleGenAI(opts);
-  }
-  return client;
-}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const isKeyError = (e) => e.status === 403 || (e.status === 400 && /api.?key/i.test(e.message));
+const isDaily = (e) => /per.?day|daily|PerDay/i.test(e.message || "");
 
-/** Réessaie quand le quota gratuit par minute est momentanément atteint. */
-async function withRetry(fn, delays = [4000, 12000, 30000]) {
-  for (let i = 0; ; i++) {
-    try {
-      return await fn();
-    } catch (e) {
-      const retryable = e instanceof ApiError && (e.status === 429 || e.status === 500 || e.status === 503);
-      if (!retryable || i >= delays.length) throw friendly(e);
-      await new Promise((r) => setTimeout(r, delays[i]));
-    }
-  }
-}
-function friendly(e) {
+function friendly(e, quotaKeys = 0) {
   if (!(e instanceof ApiError)) return e;
+  const n = Keys.count();
   const msg =
     e.status === 404
       ? `Modèle Gemini introuvable (${currentModel()}). Vérifiez GEMINI_MODEL.`
       : e.status === 429
-      ? "Limite gratuite de Gemini atteinte : patientez une minute (ou jusqu'à demain si c'est la limite du jour) puis réessayez."
-      : e.status === 400 && /api key/i.test(e.message)
-        ? "Clé GEMINI_API_KEY invalide."
-        : e.status === 403
-          ? "Clé GEMINI_API_KEY refusée (vérifiez qu'elle est active sur aistudio.google.com)."
-          : e.status >= 500
-            ? "Gemini est momentanément indisponible. Réessayez."
-            : `Erreur Gemini : ${e.message}`;
+        ? n > 1
+          ? `Les ${n} clés Gemini ont toutes atteint leur limite gratuite : patientez une minute (ou jusqu'à demain si c'est la limite du jour), ou ajoutez une clé d'un autre compte Google dans GEMINI_API_KEYS.`
+          : "Limite gratuite de Gemini atteinte : patientez une minute (ou jusqu'à demain si c'est la limite du jour) puis réessayez. Astuce : ajoutez d'autres clés dans GEMINI_API_KEYS pour que l'app change toute seule."
+        : e.status === 400 && /api.?key/i.test(e.message)
+          ? n > 1 ? "Aucune de vos clés Gemini n'est valide." : "Clé GEMINI_API_KEY invalide."
+          : e.status === 403
+            ? n > 1 ? "Toutes vos clés Gemini sont refusées (vérifiez-les sur aistudio.google.com)." : "Clé GEMINI_API_KEY refusée (vérifiez qu'elle est active sur aistudio.google.com)."
+            : e.status >= 500
+              ? "Gemini est momentanément indisponible. Réessayez."
+              : `Erreur Gemini : ${e.message}`;
   return Object.assign(new Error(msg), { status: e.status === 429 ? 429 : e.status === 404 ? 404 : e.status >= 500 ? 502 : 400 });
 }
 
 /** Le meilleur modèle « Flash » texte disponible pour cette clé (le plus récent, stable de préférence). */
-async function pickModel() {
+async function pickModel(client) {
   const found = [];
-  const pager = await getClient().models.list({ config: { pageSize: 200 } });
+  const pager = await client.models.list({ config: { pageSize: 200 } });
   for await (const m of pager) {
     const name = (m.name || "").replace(/^models\//, "");
     if (!/flash/i.test(name) || /lite|image|tts|audio|live|embed|vision|exp|thinking|8b/i.test(name)) continue;
@@ -91,22 +75,73 @@ async function pickModel() {
   return found[0]?.name || null;
 }
 
-/** Appelle Gemini ; si le modèle n'existe pas, en choisit un autre automatiquement (une fois). */
-async function call(fn, delays) {
-  await loadCachedModel();
+/** Un appel avec une clé ; si le modèle n'existe pas, en choisit un autre automatiquement (une fois). */
+async function withKey(k, fn) {
+  const client = Keys.clientFor(k.key);
   try {
-    return await withRetry(() => fn(currentModel()), delays);
+    return await fn(currentModel(), client);
   } catch (e) {
-    if (e.status !== 404) throw e;
+    if (!(e instanceof ApiError) || e.status !== 404) throw e;
     let pick = null;
     try {
-      pick = await pickModel();
+      pick = await pickModel(client);
     } catch {}
     if (!pick || pick === currentModel()) throw e;
     console.warn(`Modèle Gemini ${currentModel()} introuvable, utilisation de ${pick}`);
     resolvedModel = pick;
     await saveCachedModel(pick);
-    return withRetry(() => fn(currentModel()), delays);
+    return fn(currentModel(), client);
+  }
+}
+
+/**
+ * Appelle Gemini en passant d'une clé à l'autre : limite atteinte (429), clé refusée
+ * ou serveur indisponible → clé suivante tout de suite. Si toutes échouent, on
+ * attend un peu (`delays`) et on refait un tour.
+ */
+async function call(fn, delays = [4000, 12000, 30000]) {
+  await loadCachedModel();
+  const list = await Keys.ordered();
+  if (!list.length) throw Object.assign(new Error("Aucune clé Gemini configurée (GEMINI_API_KEY ou GEMINI_API_KEYS)."), { status: 500 });
+  let lastErr = null;
+  for (let round = 0; ; round++) {
+    let quota = 0;
+    let daily = 0;
+    let transient = 0;
+    let quotaErr = null;
+    for (const k of list) {
+      try {
+        const res = await withKey(k, fn);
+        if (k.blocked || round) Keys.unblock(k.id);
+        return res;
+      } catch (e) {
+        if (!(e instanceof ApiError)) throw e;
+        lastErr = e;
+        if (e.status === 429) {
+          quota++;
+          quotaErr = e;
+          if (isDaily(e)) daily++;
+          // Limite du jour : on l'oublie 1 h ; limite par minute : 2 min.
+          if (list.length > 1) await Keys.block(k.id, isDaily(e) ? 3600_000 : 120_000);
+          continue;
+        }
+        if (isKeyError(e)) {
+          if (list.length > 1) console.warn(`Clé Gemini …${k.id} refusée (${e.status}), clé suivante.`);
+          await Keys.block(k.id, 30 * 60_000);
+          continue;
+        }
+        if (e.status === 500 || e.status === 503) {
+          transient++;
+          continue;
+        }
+        throw friendly(e);
+      }
+    }
+    const err = quotaErr || lastErr; // « limite atteinte » prime sur « clé invalide »
+    // Plus aucun espoir à court terme (clés invalides et/ou limites du JOUR) : on n'attend pas.
+    if (!transient && quota === daily) throw friendly(err);
+    if (round >= delays.length) throw friendly(err);
+    await sleep(delays[round]);
   }
 }
 
@@ -200,10 +235,10 @@ export async function chat(docs, history, onText, system) {
   }));
   let full = "";
   await call(
-    async (model) => {
+    async (model, client) => {
       // Une coupure en pleine réponse ne se rejoue pas (le texte est déjà affiché).
       if (full) throw Object.assign(new Error("La réponse a été interrompue. Réessayez."), { status: 502 });
-      const stream = await getClient().models.generateContentStream({
+      const stream = await client.models.generateContentStream({
         model,
         contents,
         config: { systemInstruction: system + CITE_RULES },
@@ -233,9 +268,9 @@ export async function generate({ docs, instruction, schema, system, effort = "me
   return withThinking(effort, (extra) => {
     let full = "";
     let last = null;
-    return call(async (model) => {
+    return call(async (model, client) => {
       if (full) throw Object.assign(new Error("La génération a été interrompue. Réessayez."), { status: 502 });
-      const stream = await getClient().models.generateContentStream({
+      const stream = await client.models.generateContentStream({
         model,
         contents: [{ role: "user", parts: [{ text: `Voici les documents :\n\n${sources}` }, { text: instruction }] }],
         config: { ...base, ...extra },
@@ -258,8 +293,8 @@ export async function generate({ docs, instruction, schema, system, effort = "me
 
 export async function transcribe(mediaType, data, prompt) {
   const res = await withThinking("low", (extra) =>
-    call((model) =>
-      getClient().models.generateContent({
+    call((model, client) =>
+      client.models.generateContent({
         model,
         contents: [{ role: "user", parts: [{ inlineData: { mimeType: mediaType, data } }, { text: prompt }] }],
         config: { ...extra },

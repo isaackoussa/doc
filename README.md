@@ -28,6 +28,13 @@ Lumen lit vos documents à voix haute et vous aide à les comprendre.
 - **Hébergement : Netlify**, offre gratuite (fonctions, stockage et comptes inclus, dans les limites du plan gratuit).
 - Claude (Anthropic) reste disponible en option si vous voulez passer à une IA payante plus tard.
 
+## Plusieurs clés Gemini : l'app change toute seule
+
+Mettez autant de clés gratuites que vous voulez dans `GEMINI_API_KEYS`, séparées par des virgules (`clé1,clé2,clé3`) ; `GEMINI_API_KEY` reste valable et compte comme une clé de plus. Quand une clé atteint sa limite (par minute ou par jour), l'app passe **immédiatement** à la suivante et met la clé épuisée de côté quelques minutes (une heure pour la limite du jour). Les requêtes sont aussi réparties entre les clés disponibles. Cela vaut partout : discussion, studio, présentations, arbres, lecture des images et PDF scannés.
+
+- Le quota gratuit est compté **par projet Google** : deux clés du même projet partagent la même limite. Créez chaque clé dans un projet différent (sur [aistudio.google.com/apikey](https://aistudio.google.com/apikey), *Create API key → Create API key in new project*), ou avec un autre compte Google.
+- Les clés ne sont jamais envoyées au navigateur ni écrites dans les journaux : `/api/config` indique seulement leur nombre.
+
 ## IA des présentations : quota séparé
 
 Chez Google, le quota gratuit est compté **par modèle** et **par projet (clé)**. Les présentations utilisent donc leur propre chaîne : la clé `GEMINI_SLIDES_API_KEY` si elle existe, puis la clé principale, et pour chacune plusieurs modèles (Flash, Flash-Lite…). Quand un quota est épuisé, l'app passe **immédiatement** au suivant au lieu d'attendre. Aucune IA gratuite n'est réellement illimitée, mais en pratique cela multiplie les présentations possibles par jour ; avec une 2e clé d'un autre compte Google, le reste de l'app (discussion, quiz…) n'entame plus du tout le quota des présentations.
@@ -62,8 +69,9 @@ Netlify Identity ne fonctionne pas en local : `LUMEN_DEV_USER` simule un utilisa
 | Variable | Rôle |
 | --- | --- |
 | `GEMINI_API_KEY` | **IA gratuite** (Google Gemini) : discussion, studio, podcast, lecture des images et PDF scannés. |
+| `GEMINI_API_KEYS` | Facultatif : clés Gemini supplémentaires, séparées par des virgules. L'app passe à la suivante dès qu'une clé atteint sa limite. |
 | `GEMINI_MODEL` | Modèle Gemini (défaut `gemini-flash-latest`). |
-| `GEMINI_SLIDES_API_KEY` | Facultatif : clé Gemini gratuite d'**un autre compte Google**, réservée aux présentations (quota totalement séparé). |
+| `GEMINI_SLIDES_API_KEY` | Facultatif : clé Gemini gratuite d'**un autre compte Google**, réservée aux présentations (quota totalement séparé). Plusieurs clés possibles, séparées par des virgules. |
 | `SLIDES_MODELS` | Facultatif : modèles essayés pour les présentations, dans l'ordre. |
 | `ANTHROPIC_API_KEY` | Optionnel, payant : Claude (Anthropic). Utilisé si `AI_PROVIDER=claude` ou s'il n'y a pas de clé Gemini. |
 | `AI_PROVIDER` | `gemini` ou `claude` pour forcer le fournisseur. |

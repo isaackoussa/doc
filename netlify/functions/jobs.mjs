@@ -19,7 +19,7 @@ export default handle(async (req, context) => {
   }
 
   if (req.method === "POST" && !context.params.id) {
-    if (!aiEnabled()) throw new HttpError(503, "L'IA n'est pas configurée : ajoutez GEMINI_API_KEY (gratuit).");
+    if (!aiEnabled()) throw new HttpError(503, "L'IA n'est pas configurée : ajoutez une clé GEMINI_API_KEY (gratuite).");
     const b = await body(req);
     const id = randomUUID();
     const job = { id, uid: user.id, type: b.type, status: "pending", createdAt: new Date().toISOString() };
