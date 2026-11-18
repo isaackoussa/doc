@@ -614,3 +614,12 @@ img.hero-mark.small { width: 52px; height: 52px; border-radius: 14px; }
 .dlg-section { margin: 4px 0 -4px; font-size: 15px; }
 .job { flex-wrap: wrap; }
 .notif-offer { font-size: 13px; margin-left: auto; }
+
+/* ---------- résumés visuels (arbre de décision, résumé en image) ---------- */
+.visual { display: flex; flex-direction: column; gap: 12px; }
+.visual-box { border-radius: 12px; overflow: auto; background: #fff; border: 1px solid var(--line); box-shadow: var(--shadow); max-height: 75vh; -webkit-overflow-scrolling: touch; }
+.visual-box svg { display: block; width: 100%; height: auto; }
+.visual-box.tree svg { min-width: 520px; }
+.visual-box.natural svg { width: auto; max-width: none; }
+.tool-new { position: relative; }
+.tool-new::after { content: "Nouveau"; position: absolute; top: 8px; right: 8px; font-size: 10px; font-weight: 700; color: #fff; background: var(--accent); border-radius: 99px; padding: 1px 7px; }

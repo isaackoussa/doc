@@ -905,7 +905,7 @@
     btns.forEach((b) => (b.disabled = true));
     try {
       const length = kind === "slides" ? $("#slidesLength").value : $("#podcastLength").value;
-      const unit = { slides: "diapositive", podcast: "réplique", quiz: "question", flashcards: "fiche", mindmap: "idée" }[kind];
+      const unit = { slides: "diapositive", podcast: "réplique", quiz: "question", flashcards: "fiche", mindmap: "idée", arbre: "branche", infographie: "bloc" }[kind];
       const onProgress = (j, elapsed) => {
         const sec = Math.round(elapsed / 1000);
         const time = sec < 60 ? `${sec} s` : `${Math.floor(sec / 60)} min ${String(sec % 60).padStart(2, "0")}`;
@@ -968,9 +968,10 @@
     body.scrollTop = 0;
     const r = { quiz: renderQuiz, flashcards: renderCards, mindmap: renderMindmap, podcast: renderPodcast }[note.kind];
     if (note.kind === "slides" && note.format === "json") window.Slides.render(note, body, slidesCtx(note));
+    else if ((note.kind === "arbre" || note.kind === "infographie") && note.format === "json") window.Visuals.render(note, body, { toast, speak: speakItems });
     else if (r && note.format === "json") r(note.content, body);
     else body.innerHTML = `<div class="prose">${md(note.content)}</div>`;
-    $("#noteListen").classList.toggle("hidden", ["quiz", "flashcards", "slides"].includes(note.kind));
+    $("#noteListen").classList.toggle("hidden", ["quiz", "flashcards", "slides", "arbre", "infographie"].includes(note.kind));
   }
   /** Ce dont le module de présentation a besoin : enregistrer, lire à voix haute, notifier. */
   function slidesCtx(note) {

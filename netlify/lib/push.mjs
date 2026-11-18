@@ -85,4 +85,6 @@ export const READY = {
   mindmap: "Votre carte mentale est prête",
   podcast: "Votre podcast est prêt",
   slides: "Votre présentation est prête",
+  arbre: "Votre arbre de décision est prêt",
+  infographie: "Votre résumé en image est prêt",
 };

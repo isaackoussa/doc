@@ -157,6 +157,52 @@ export const STUDIO = {
     prompt:
       "Crée une carte mentale des documents : `central` = le sujet en quelques mots ; 4 à 7 `branches` principales ; chacune avec 2 à 5 sous-idées (`children`) ; chaque sous-idée avec 0 à 3 `details` très courts. Libellés brefs (2 à 6 mots).",
   },
+  arbre: {
+    label: "Arbre de décision",
+    effort: "medium",
+    schema: obj({
+      title: str,
+      question: str,
+      nodes: arr(
+        obj({
+          id: str,
+          parent: str,
+          edge: str,
+          kind: { type: "string", enum: ["question", "etape", "resultat"] },
+          text: str,
+          detail: str,
+        }),
+      ),
+    }),
+    prompt: `Résume les documents sous forme d'ARBRE DE DÉCISION (arbre de choix) : un schéma « si… alors… » que l'on parcourt de haut en bas pour savoir quoi conclure ou quoi faire selon la situation.
+- \`title\` : titre court de l'arbre ; \`question\` : la question de départ à laquelle l'arbre répond (ex. « Comment résoudre une équation du second degré ? », « L'assureur doit-il indemniser ? »).
+- \`nodes\` : 7 à 18 nœuds, liste à plat. Chaque nœud : \`id\` court unique (« n1 », « n2 »…), \`parent\` = id du nœud précédent ("" pour la racine, une seule racine), \`edge\` = libellé de la branche venant du parent (« Oui », « Non », « Δ > 0 », « Bonne foi »…, "" pour la racine), \`kind\` :
+  « question » = une condition à vérifier (2 ou 3 branches sortantes),
+  « etape » = une action ou un calcul à faire (1 branche sortante),
+  « resultat » = une conclusion (feuille, aucune branche sortante),
+  \`text\` = le contenu (≤ 12 mots, une question se termine par « ? »), \`detail\` = précision utile (article, formule, exemple ; ≤ 15 mots) ou "".
+- Toutes les branches doivent aboutir à un « resultat ». Les questions couvrent tous les cas (Oui / Non, ou les différents cas). Contenu exact, tiré des documents ; formules en LaTeX entre $…$.
+- Si le document n'est pas une procédure, construis l'arbre autour des grands choix ou des cas qu'il distingue (ex. type de contrat, situation, catégorie).`,
+  },
+  infographie: {
+    label: "Résumé en image",
+    effort: "medium",
+    schema: obj({
+      title: str,
+      subtitle: str,
+      icon: str,
+      palette: { type: "string", enum: ["sarcelle", "marine", "bordeaux", "foret", "ardoise", "prune"] },
+      figures: arr(obj({ value: str, label: str })),
+      sections: arr(obj({ icon: str, title: str, points: arr(str) })),
+      takeaway: str,
+    }),
+    prompt: `Fais un RÉSUMÉ VISUEL (infographie, une seule image) des documents, clair et élégant, à partager ou à imprimer.
+- \`title\` : titre court ; \`subtitle\` : une phrase qui dit de quoi il s'agit ; \`icon\` : icône du sujet ; \`palette\` : « sarcelle », « marine », « bordeaux », « foret », « ardoise » ou « prune » selon le sujet.
+- \`figures\` : 0 à 4 chiffres clés VRAIMENT présents dans les documents (\`value\` court, ex. « 1992 », « 14 États », « 0,5 % » ; \`label\` ≤ 8 mots). Sans chiffres, liste vide.
+- \`sections\` : 4 à 6 blocs, un par idée importante, dans un ordre logique : \`icon\`, \`title\` (2 à 5 mots), \`points\` = 2 à 4 points très courts (≤ 12 mots chacun).
+- \`takeaway\` : la phrase à retenir (≤ 25 mots).
+Formules en LaTeX entre $…$. Icônes : uniquement un de ces noms — ${ICON_NAMES.join(", ")}.`,
+  },
   podcast: {
     label: "Podcast audio",
     effort: "medium",

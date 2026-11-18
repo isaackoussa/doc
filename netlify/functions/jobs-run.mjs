@@ -27,7 +27,7 @@ export default async (req) => {
       const { kind, docIds, focus, length } = job.params;
       const docs = await loadDocs(job.uid, docIds);
       // Avancement (ex. « diapositive 4 / 10 ») enregistré au plus toutes les 2 s.
-      const COUNTERS = { slides: /"layout"\s*:/g, podcast: /"speaker"\s*:/g, quiz: /"question"\s*:/g, flashcards: /"front"\s*:/g, mindmap: /"label"\s*:/g };
+      const COUNTERS = { slides: /"layout"\s*:/g, podcast: /"speaker"\s*:/g, quiz: /"question"\s*:/g, flashcards: /"front"\s*:/g, mindmap: /"label"\s*:/g, arbre: /"kind"\s*:/g, infographie: /"points"\s*:/g };
       const TOTALS = { slides: { court: 6, moyen: 10, long: 15 }[length] || 10, podcast: { court: 12, moyen: 24, long: 40 }[length] || 24, quiz: 10 };
       let lastSave = 0;
       const onProgress = (text) => {
